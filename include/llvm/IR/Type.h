@@ -223,8 +223,8 @@ public:
   /// True if this is an instance of PointerType.
   bool isPointerTy() const { return getTypeID() == PointerTyID; }
 
-  /// True if this is a _MMSafe_ptr type.
-  bool isMMSafePointerTy() const;
+  /// True if this is a _TS_ptr type.
+  bool isTSPointerTy() const;
 
   /// Return true if this is a pointer type or a vector of pointer types.
   bool isPtrOrPtrVectorTy() const { return getScalarType()->isPointerTy(); }
@@ -381,8 +381,8 @@ public:
     return ContainedTys[0];
   }
 
-  /// Return the real pointer inside a MMSafe_ptr.
-  PointerType *getInnerPtrFromMMSafePtr() const;
+  /// Return the real pointer inside a _TS_ptr.
+  PointerType *getInnerPtrFromTSPtr() const;
 
   /// Get the address space of this pointer or pointer vector type.
   inline unsigned getPointerAddressSpace() const;
