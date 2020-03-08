@@ -18,6 +18,7 @@
 #define LLVM_IR_HARMONIZETYPE_H
 
 #include "llvm/IR/PassManager.h"
+#include "Instructions.h"
 
 namespace llvm {
 namespace harmonizeType {
@@ -28,6 +29,8 @@ struct HarmonizeTypePass : FunctionPass {
   HarmonizeTypePass();
 
   bool runOnFunction(Function &F) override;
+
+  void examineLoadInst(LoadInst &LI) const;
 };
 
 } // End of namespace harmonizeType
