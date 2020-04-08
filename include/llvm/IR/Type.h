@@ -382,7 +382,7 @@ public:
   }
 
   /// Return the real pointer inside a MMSafe_ptr.
-  PointerType *getInnerPtrFromMMSafePtr() const;
+  PointerType *getMMSafePtrInnerPtr() const;
 
   /// Get the address space of this pointer or pointer vector type.
   inline unsigned getPointerAddressSpace() const;
