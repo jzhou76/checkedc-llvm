@@ -299,6 +299,14 @@ public:
     return cast<PointerType>(getElementType(0));
   }
 
+  /// Return the raw pointer inside the struct representation of a _MM_ptr
+  /// or _MM_array_ptr.
+  PointerType *getMMSafePtrStructInnerPtr() const {
+    assert((isMMPointerRep() || isMMArrayPointerRep()) &&
+        "This struct represents neither a _MM_ptr nor a _MM_array_ptr.");
+    return cast<PointerType>(getElementType(0));
+  }
+
   /// Return the name for this struct type if it has an identity.
   /// This may return an empty string for an unnamed struct type.  Do not call
   /// this on an literal type.
