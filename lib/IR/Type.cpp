@@ -112,15 +112,30 @@ bool Type::isEmptyTy() const {
   return false;
 }
 
-/// Testing if this represents a _MMSafe_ptr type.
-bool Type::isMMSafePointerTy() const {
-  return isStructTy() && cast<StructType>(this)->isMMSafePointerRep();
+/// Testing if this represents a _MM_ptr type.
+bool Type::isMMPointerTy() const {
+  return isStructTy() && cast<StructType>(this)->isMMPointerRep();
 }
 
-/// Return the real pointer inside a MMSafe_ptr.
-PointerType *Type::getMMSafePtrInnerPtr() const {
-  assert(isMMSafePointerTy() && "This type is not a MMSafe_ptr");
-  return cast<StructType>(this)->getInnerPtrFromMMSafePtrStruct();
+/// Testing if this represents a _MM_array_ptr type.
+bool Type::isMMArrayPointerTy() const {
+  return isStructTy() && cast<StructType>(this)->isMMArrayPointerRep();
+}
+
+/// Test if this represents a _MM_ptr or a _MM_array_ptr tyep.
+bool Type::isMMSafePointerTy() const {
+  return isMMPointerTy() || isMMArrayPointerTy();
+}
+
+/// Return the real pointer inside a _MM_ptr.
+PointerType *Type::getMMPtrInnerPtr() const {
+  assert(isMMPointerTy() && "This type is not a _MM_ptr.");
+  return cast<StructType>(this)->getMMPtrStructInnerPtr();
+}
+
+PointerType *Type::getMMArrayPtrInnerPtr() const {
+  assert(isMMArrayPointerTy() && "This type is not a _MM_array_ptr.");
+  return cast<StructType>(this)->getMMArrayPtrStructInnerPtr();
 }
 
 unsigned Type::getPrimitiveSizeInBits() const {
@@ -656,9 +671,9 @@ PointerType *PointerType::get(Type *EltTy, unsigned AddressSpace) {
 //
 // Checked C
 //
-// Method: PointerType::getMMSafePtr()
+// Method: PointerType::getMMPtr()
 //
-// This method builds a _MMSafe_ptr pointer. Essentially we use a struct
+// This method builds a _MM_ptr pointer. Essentially we use a struct
 // to contain both the real pointer to the struct object and the ID which 
 // is a unsigned long type.
 //
@@ -669,7 +684,7 @@ PointerType *PointerType::get(Type *EltTy, unsigned AddressSpace) {
 // \return a struct that contains a pointer to the pointee and an ID of
 //         64-bit integer.
 //
-StructType *PointerType::getMMSafePtr(Type *EltTy, LLVMContext &Context, 
+StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context, 
                                       unsigned AddressSpace) {
   assert(EltTy && "Can't get a pointer to <null> type!");
   assert(isValidElementType(EltTy) && "Invalid type for pointer element!");
@@ -685,7 +700,7 @@ StructType *PointerType::getMMSafePtr(Type *EltTy, LLVMContext &Context,
     PointeeEntry = new (CImpl->TypeAllocator) PointerType(EltTy, AddressSpace);
   }
 
-  PointeeEntry->isMMSafePtr = true;
+  PointeeEntry->isMMPtr = true;
  
   // Create an ID entry. 
   // Currently we hardcode the ID to be a 64-bit integer. This may affect
@@ -693,18 +708,18 @@ StructType *PointerType::getMMSafePtr(Type *EltTy, LLVMContext &Context,
   // to a "unsigned long" type.
   IntegerType *IDEntry = Type::getInt64Ty(Context);
   
-  StructType *MMSafePtrStruct = StructType::get(PointeeEntry, IDEntry);
+  StructType *MMPtrStruct = StructType::get(PointeeEntry, IDEntry);
   // Since StructType::get() is the primary way to create a literal struct
   // and it is a static method, we cannot pass a boolean to it to indicate
-  // if this struct represents a _MMSafe_ptr. So we set the isMMSafePtr
+  // if this struct represents a _MM_ptr. So we set the isMMPtr
   // field separately here.
-  MMSafePtrStruct->isMMSafePtr = true;
+  MMPtrStruct->isMMPtr = true;
 
-  return MMSafePtrStruct;
+  return MMPtrStruct;
 }
 
-PointerType::PointerType(Type *E, unsigned AddrSpace, bool isMMSafePtrTy)
-  : Type(E->getContext(), PointerTyID), PointeeTy(E), isMMSafePtr(isMMSafePtrTy) {
+PointerType::PointerType(Type *E, unsigned AddrSpace, bool isMMPtrTy)
+  : Type(E->getContext(), PointerTyID), PointeeTy(E), isMMPtr(isMMPtrTy) {
   ContainedTys = &PointeeTy;
   NumContainedTys = 1;
   setSubclassData(AddrSpace);

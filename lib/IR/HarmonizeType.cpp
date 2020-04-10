@@ -30,8 +30,8 @@ HarmonizeTypePass::HarmonizeTypePass() : FunctionPass(ID) {
 /**
  * Main body of this pass.
  *
- * Before running this pass, when a MMSafePtr is dereferenced, a malformed
- * load would be generated. For example,
+ * Before running this pass, when a _MM_Ptr or a _MM_array_ptr is dereferenced,
+ * a malformed load would be generated. For example,
  *
  *   %p_Obj_Ptr = load %struct.Node*, { %struct.Node*, i64 }* %p
  *
