@@ -701,13 +701,13 @@ StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context,
   }
 
   PointeeEntry->isMMPtr = true;
- 
-  // Create an ID entry. 
+
+  // Create an ID entry.
   // Currently we hardcode the ID to be a 64-bit integer. This may affect
   // program's performance on a 32-bit platform. Maybe we should change it
   // to a "unsigned long" type.
   IntegerType *IDEntry = Type::getInt64Ty(Context);
-  
+
   StructType *MMPtrStruct = StructType::get(PointeeEntry, IDEntry);
   // Since StructType::get() is the primary way to create a literal struct
   // and it is a static method, we cannot pass a boolean to it to indicate
@@ -718,8 +718,53 @@ StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context,
   return MMPtrStruct;
 }
 
-PointerType::PointerType(Type *E, unsigned AddrSpace, bool isMMPtrTy)
-  : Type(E->getContext(), PointerTyID), PointeeTy(E), isMMPtr(isMMPtrTy) {
+//
+// Checked C
+// Method: PointerType::getMMArrayPtr()
+//
+// This method builds a _MM_array_ptr pointer. Essential we use a struct
+// to contain the raw pointer to the struct object, the ID, and the starting
+// address of the array.
+//
+// \param EltTy - the typ of the pointee.
+// \param Context - the LLVMContext.
+// \param AddressSpace - target address space
+//
+// \return a struct that contains a pointer to the pointee, an ID of
+//         64-bit integer, and a pointer to the begining of the pointee.
+//
+StructType *PointerType::getMMArrayPtr(Type *EltTy, LLVMContext &Context,
+                                       unsigned AddressSpace) {
+  assert(EltTy && "Can't get a pointer to <null> type!");
+  assert(isValidElementType(EltTy) && "Invalid type for pointer element!");
+
+  LLVMContextImpl *CImpl = EltTy->getContext().pImpl;
+
+  // Since AddressSpace #0 is the common case, we special case it.
+  PointerType *&PointeeEntry = AddressSpace == 0 ? CImpl->PointerTypes[EltTy]
+     : CImpl->ASPointerTypes[std::make_pair(EltTy, AddressSpace)];
+
+  // Create a pointer to the pointee.
+  if (!PointeeEntry) {
+    PointeeEntry = new (CImpl->TypeAllocator) PointerType(EltTy, AddressSpace);
+  }
+
+  PointeeEntry->isMMArrayPtr = true;
+
+  // Create an ID entry.
+  IntegerType *IDEntry = Type::getInt64Ty(Context);
+
+  // Create a struct that contains all the three items of a _MM_array_ptr.
+  StructType *MMArrayPtrStruct = StructType::get(PointeeEntry, IDEntry,
+                                                 PointeeEntry);
+  MMArrayPtrStruct->isMMArrayPtr = true;
+
+  return MMArrayPtrStruct;
+}
+
+
+PointerType::PointerType(Type *E, unsigned AddrSpace)
+  : Type(E->getContext(), PointerTyID), PointeeTy(E) {
   ContainedTys = &PointeeTy;
   NumContainedTys = 1;
   setSubclassData(AddrSpace);

@@ -220,9 +220,9 @@ public:
   StructType &operator=(const StructType &) = delete;
 
   // Whether this struct is an instance  of a _MM_ptr.
-  bool isMMPtr;
+  bool isMMPtr = false;
   // Whether this struct is an instance of a _MM_array_ptr.
-  bool isMMArrayPtr;
+  bool isMMArrayPtr = false;
 
   /// This creates an identified struct.
   static StructType *create(LLVMContext &Context, StringRef Name);
@@ -498,12 +498,12 @@ unsigned Type::getVectorNumElements() const {
 
 /// Class to represent pointers.
 class PointerType : public Type {
-  explicit PointerType(Type *ElType, unsigned AddrSpace,
-                       bool isMMPtr = false);
+  explicit PointerType(Type *ElType, unsigned AddrSpace);
 
   Type *PointeeTy;
 
-  bool isMMPtr;
+  bool isMMPtr = false;
+  bool isMMArrayPtr = false;
 
 public:
   PointerType(const PointerType &) = delete;
@@ -515,8 +515,13 @@ public:
 
   /// This constructs a _MM_ptr pointer to a struct object in a numbered
   /// address space.
-  static StructType *getMMPtr(Type *ElementType, LLVMContext &Context,
-                                  unsigned AddressSpace);
+  static StructType *getMMPtr(Type *EltTy, LLVMContext &Context,
+                              unsigned AddressSpace);
+
+  /// This constructs a _MM_array_ptr pointer to an array object in a
+  /// numbered address space.
+  static StructType *getMMArrayPtr(Type *EtTy, LLVMContext &Context,
+                                   unsigned AddressSpace);
 
   /// This constructs a pointer to an object of the specified type in the
   /// generic address space (address space zero).
@@ -527,9 +532,13 @@ public:
   Type *getElementType() const { return PointeeTy; }
 
   /// Return true if this is a _MM_ptr<T> pointer.
-  bool isMMPointerTy() const {
-    return isMMPtr;
-  }
+  bool isMMPointerTy() const { return isMMPtr; }
+
+  /// Return true if this is a _MM_array_ptr pointer.
+  bool isMMArrayPointerTy() const { return isMMArrayPtr; }
+
+  /// Return true if this is a memory-management-safe pointer.
+  bool isMMSafePointerTy() const { return isMMPtr || isMMArrayPtr; }
 
   /// Return true if the specified type is valid as a element type.
   static bool isValidElementType(Type *ElemTy);
