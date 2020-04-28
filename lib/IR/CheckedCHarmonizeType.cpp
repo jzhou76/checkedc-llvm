@@ -14,7 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/IR/HarmonizeType.h"
+#include "llvm/IR/CheckedCHarmonizeType.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
