@@ -393,6 +393,9 @@ public:
   /// Return the raw pointer inside an _MM_array_ptr.
   PointerType *getMMArrayPtrInnerPtr() const;
 
+  /// Return the raw pointer inside an _MM_ptr or a _MM_array_ptr.
+  PointerType *getMMSafePtrInnerPtr() const;
+
   /// Get the address space of this pointer or pointer vector type.
   inline unsigned getPointerAddressSpace() const;
 
