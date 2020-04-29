@@ -754,15 +754,13 @@ StructType *PointerType::getMMArrayPtr(Type *EltTy, LLVMContext &Context,
   if (!PointeeEntry) {
     PointeeEntry = new (CImpl->TypeAllocator) PointerType(EltTy, AddressSpace);
   }
-
   PointeeEntry->isMMArrayPtr = true;
 
-  // Create an ID entry.
-  IntegerType *IDEntry = Type::getInt64Ty(Context);
-
   // Create a struct that contains all the three items of a _MM_array_ptr.
-  StructType *MMArrayPtrStruct = StructType::get(PointeeEntry, IDEntry,
-                                                 PointeeEntry);
+  StructType *MMArrayPtrStruct =
+    StructType::get(PointeeEntry,
+                    getInt64Ty(Context),      // ID
+                    getInt64PtrTy(Context));  // pointer to ID.
   MMArrayPtrStruct->isMMArrayPtr = true;
 
   return MMArrayPtrStruct;
