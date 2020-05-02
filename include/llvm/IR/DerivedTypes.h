@@ -285,6 +285,9 @@ public:
   /// Return true if this represents a _MM_array_ptr<T>.
   bool isMMArrayPointerRep() const { return isMMArrayPtr; }
 
+  /// Return true if this represents a MM_ptr or _MM_array_ptr.
+  bool isMMSafePointerRep() const { return isMMPtr || isMMArrayPtr; }
+
   /// Return the raw pointer inside the struct representation of a _MM_ptr.
   PointerType *getMMPtrStructInnerPtr() const {
     assert(isMMPointerRep() &&
