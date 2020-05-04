@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This pass tries to resolve the type mismatch problem caused by Checked C's
-// new safe pointers for temporal memory safety: those new types of pointers
+// new safe pointers for temporal memory safety. Those new types of pointers
 // are implemented as llvm::StructType, while by default pointers are
 // implemented as llvm::PointerType.
 //
@@ -68,11 +68,11 @@ bool HarmonizeTypePass::runOnFunction(Function &F) {
             GetElementPtrInst::Create(pointeeTy,
                                       LI->getPointerOperand(),
                                       ArrayRef<Value *>({zero, zero}),
-                                      "Struct_Ptr");
+                                      "ObjRawPtr_Ptr");
           newGEPs.push_back(GEP);
 
           // Create a new load.
-          newLoads.push_back(new LoadInst(loadedType, GEP, "loadStructPtr"));
+          newLoads.push_back(new LoadInst(loadedType, GEP, "ObjRawPtr"));
 
           change = true;
         }
