@@ -1832,6 +1832,39 @@ public:
   // isSigned parameter.
   Value *CreateIntCast(Value *, Type *, const char *) = delete;
 
+  // Checked C: Cast an MMSafe pointer to another MMSafe pointer.
+  // Casting between one type of MMSafe pointer, e.g., _MM_ptr<Node> to the same
+  // type of MMSafe pointer to a different type, e.g., _MM_ptr<NewNode>,
+  // is dangerous. However, we should support this as sometimes the
+  // programmer is certain that the cast is safe. For example, in the bh
+  // program of the Olden benchmark suite, it is safe to cast a pointer
+  // of "struct tree to a pointer of struct node because struct node behaves
+  // like the parent "class" of struct tree.
+  //
+  // Another case is calling mm_alloc<T> where we need cast the return value
+  // {%i8*, i64} to {%some_struct*, i64}.
+  //
+  // TODO: We should check earlier during compilation that this kind of
+  // cast is really safe, i.e., the destination pointed struct should be
+  // rigorously a subset (starting from beginning) of the source pointed struct.
+  //
+  // TODO: We should disaalow cast between _MM_ptr and _MM_array_ptr.
+  // This can be done earlier during compilation.
+  Value *CreateMMSafePtrCast(Value *Src, Type *DestTy,
+                             const Twine &Name = "") {
+    if (Src->getType() == DestTy) return Src;
+
+    Value *SrcRawPtr = CreateExtractValue(Src, 0);
+    Value *SrcID = CreateExtractValue(Src, 1);
+    Value *DestRawPtr =
+      CreatePointerCast(SrcRawPtr, cast<StructType>(DestTy)->getElementType(0));
+    UndefValue *Dest = UndefValue::get(DestTy);
+    Value *insertPtr = CreateInsertValue(Dest, DestRawPtr, 0);
+    Value *insertID = CreateInsertValue(insertPtr, SrcID, 1, Name);
+    if (DestTy->isMMPointerTy()) return insertID;
+    return CreateInsertValue(insertID, CreateExtractValue(Src, 2), 2, Name);
+  }
+
   //===--------------------------------------------------------------------===//
   // Instruction creation methods: Compare Instructions
   //===--------------------------------------------------------------------===//
