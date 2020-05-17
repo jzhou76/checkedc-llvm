@@ -127,21 +127,21 @@ bool Type::isMMSafePointerTy() const {
   return isMMPointerTy() || isMMArrayPointerTy();
 }
 
-/// Return the inner raw pointer inside a _MM_ptr.
-PointerType *Type::getMMPtrInnerPtr() const {
+/// Return the type of the inner raw pointer inside a _MM_ptr.
+PointerType *Type::getMMPtrInnerPtrTy() const {
   assert(isMMPointerTy() && "This type is not a _MM_ptr.");
-  return cast<StructType>(this)->getMMPtrStructInnerPtr();
+  return cast<StructType>(this)->getMMPtrStructInnerPtrTy();
 }
 
-/// Return the inner raw pointer inside a _MM_array_ptr.
-PointerType *Type::getMMArrayPtrInnerPtr() const {
+/// Return the type of the inner raw pointer inside a _MM_array_ptr.
+PointerType *Type::getMMArrayPtrInnerPtrTy() const {
   assert(isMMArrayPointerTy() && "This type is not a _MM_array_ptr.");
-  return cast<StructType>(this)->getMMArrayPtrStructInnerPtr();
+  return cast<StructType>(this)->getMMArrayPtrStructInnerPtrTy();
 }
 
-/// Return the inner raw pointer inside a _MM_ptr or _MM_array_ptr.
-PointerType *Type::getMMSafePtrInnerPtr() const {
-  return isMMPointerTy() ? getMMPtrInnerPtr() : getMMArrayPtrInnerPtr();
+/// Return the type of the inner raw pointer inside a _MM_ptr or _MM_array_ptr.
+PointerType *Type::getMMSafePtrInnerPtrTy() const {
+  return isMMPointerTy() ? getMMPtrInnerPtrTy() : getMMArrayPtrInnerPtrTy();
 }
 
 unsigned Type::getPrimitiveSizeInBits() const {

@@ -285,26 +285,25 @@ public:
   /// Return true if this represents a _MM_array_ptr<T>.
   bool isMMArrayPointerRep() const { return isMMArrayPtr; }
 
-  /// Return true if this represents a MM_ptr or _MM_array_ptr.
+  /// Return true if this represents a _MM_ptr or _MM_array_ptr.
   bool isMMSafePointerRep() const { return isMMPtr || isMMArrayPtr; }
 
-  /// Return the raw pointer inside the struct representation of a _MM_ptr.
-  PointerType *getMMPtrStructInnerPtr() const {
+  /// Return the type of the raw pointer inside a _MM_ptr.
+  PointerType *getMMPtrStructInnerPtrTy() const {
     assert(isMMPointerRep() &&
         "This struct does not represent a _MM_ptr.");
     return cast<PointerType>(getElementType(0));
   }
 
-  /// Return the raw pointer inside the struct representation of a _MM_array_ptr.
-  PointerType *getMMArrayPtrStructInnerPtr() const {
+  /// Return the type of the raw pointer inside the _MM_array_ptr.
+  PointerType *getMMArrayPtrStructInnerPtrTy() const {
     assert(isMMArrayPointerRep() &&
         "This struct does not represent a _MM_array_ptr.");
     return cast<PointerType>(getElementType(0));
   }
 
-  /// Return the raw pointer inside the struct representation of a _MM_ptr
-  /// or _MM_array_ptr.
-  PointerType *getMMSafePtrStructInnerPtr() const {
+  /// Return the type of the raw pointer inside a _MM_ptr or _MM_array_ptr.
+  PointerType *getMMSafePtrStructInnerPtrTy() const {
     assert((isMMPointerRep() || isMMArrayPointerRep()) &&
         "This struct represents neither a _MM_ptr nor a _MM_array_ptr.");
     return cast<PointerType>(getElementType(0));

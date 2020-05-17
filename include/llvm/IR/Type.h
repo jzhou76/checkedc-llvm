@@ -387,14 +387,14 @@ public:
     return ContainedTys[0];
   }
 
-  /// Return the raw pointer inside an _MM_ptr.
-  PointerType *getMMPtrInnerPtr() const;
+  /// Return the type of the raw pointer inside an _MM_ptr.
+  PointerType *getMMPtrInnerPtrTy() const;
 
-  /// Return the raw pointer inside an _MM_array_ptr.
-  PointerType *getMMArrayPtrInnerPtr() const;
+  /// Return the type of the raw pointer inside an _MM_array_ptr.
+  PointerType *getMMArrayPtrInnerPtrTy() const;
 
-  /// Return the raw pointer inside an _MM_ptr or a _MM_array_ptr.
-  PointerType *getMMSafePtrInnerPtr() const;
+  /// Return the tyep of the raw pointer inside an _MM_ptr or _MM_array_ptr.
+  PointerType *getMMSafePtrInnerPtrTy() const;
 
   /// Get the address space of this pointer or pointer vector type.
   inline unsigned getPointerAddressSpace() const;
