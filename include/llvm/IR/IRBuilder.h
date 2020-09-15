@@ -1772,6 +1772,33 @@ public:
       return V;
     if (auto *VC = dyn_cast<Constant>(V))
       return Insert(Folder.CreateCast(Op, VC, DestTy), Name);
+
+    // Checked C
+    // Handle cast between MMSafe pointers.
+    // When an MMSafe pointer is explicitly cast to another MMSafe pointer
+    // and the result is immediately used to access one of its members,
+    // e.g., int i = ((mm_ptr<T1>)p)->i; where p's type is mm_ptr<T2>,
+    // an clang::CodeGen::Address would have been created for p, and the
+    // type of the Pointer inside the Address has been mutated to the type
+    // of the raw pointer to T2. In this case, trying to cast T2* to mm_ptr<T1>
+    // would cause an assertion failure because currently CastInst does not
+    // support cast from or to a struct directly. Here we simplily cast the
+    // inner raw pointer of the Src to the type of the inner raw pointer
+    // of the Dest. This should be safe because the compiler inserts dynamic
+    // ID checks for MMSafe pointers based on its clang::Type rather than
+    // its implementation, i.e., llvm::Type; so the compiler would not omit
+    // inserting necessary ID checking as long as the dereferenced pointer
+    // is semantically an MMSafe pointer.
+    //
+    // When an MMSafe pointer is explicitly cast to another MMSafe pointer
+    // but not used immediately, e.g., mm_ptr<T1> p1 = (mm_ptr<T2>)p2;
+    // ScalarExprEmitter::VisitCastExpr() will hanlde the cast, and
+    // it calls IRBuilder::CreateMMSafePtrCast() to do the cast.
+    if (DestTy->isMMSafePointerTy()) {
+      assert(isa<PointerType>(V->getType()) &&
+          "Trying to cast a non-pointer type to an MMSafe pointer type.");
+      DestTy = DestTy->getMMSafePtrInnerPtrTy();
+    }
     return Insert(CastInst::Create(Op, V, DestTy), Name);
   }
 
