@@ -80,23 +80,48 @@ HarmonizeTypePass::HarmonizeTypePass() : FunctionPass(ID) {
  * the ++/-- operator does not use the type-crippled MMArrayPtr but uses
  * a complete MMArrayPtr loaded earlier.
  *
+ * A syntax that will cause ill-formed stores is "*++/--p" for MMArrayPtr.
+ * Because the increment/decrement operator generates an Address for
+ * an MMArrayPtr with mutated type, the following store instruction is broken.
+ * To be more specific, code like the following snnipet would be created:
+ *
+ *   %2 = insertvalue { i32*, i64, i64* } %1, i32* %incdec.ptr, 0
+ *   store i32* %2, { i32*, i64, i64* }* %p, align 32
+ *
+ * To fix it, first restore the type of the MMSafePtr; this will automatically
+ * fix the store. Next extract the inner raw pointer from the MMSafePtr
+ * and replace all the uses of the ill-typed MMArrayPtr in load instructions
+ * with the extracted one. For the example, the fixed code would be like:
+ *
+ *   %2 = insertvalue { i32*, i64, i64* } %1, i32* %incdec.ptr, 0
+ *   %_innerPtr1 = extractvalue { i32*, i64, i64* } %2, 0
+ *   store { i32*, i64, i64* } %2, { i32*, i64, i64* }* %p, align 32
+ *
+ * And the corresponding load that uses the MMArrayPtr would be converted from
+ * "%3 = load i32, i32* %2, align 4" to
+ * "%3 = load i32, i32* %_innerPtr1, align 4".
+ *
  * */
 bool HarmonizeTypePass::runOnFunction(Function &F) {
   bool change = false;
 
-  std::vector<Instruction *> newGEPs, newLoads, toDelLoads, MMArrayLoads;
+  std::vector<Instruction *> illFormedLoads, GEPforLoad, newLoads;
+  std::vector<Instruction *> MMArrayLoads;
+  // ill-formed store instructions.
+  std::vector<StoreInst *> illFormedStores;
+
   for (BasicBlock &BB : F) {
     for (Instruction &I : BB) {
-      LoadInst *LI = dyn_cast<LoadInst>(&I);
-      if (LI) {
+      if (isa<LoadInst>(&I)) {
+        LoadInst *LI = cast<LoadInst>(&I);
         Type *ptrOpTy = LI->getPointerOperandType();
         Type *loadedType = LI->getType();
-        Type *pointeeTy = dyn_cast<PointerType>(ptrOpTy)->getElementType();
+        Type *pointeeTy = cast<PointerType>(ptrOpTy)->getElementType();
         if (pointeeTy->isMMSafePointerTy() &&
             !loadedType->isMMSafePointerTy()) {
-          // This is a problematic load.
+          // This is an ill-formed load.
           // Put this load to the to-delete list.
-          toDelLoads.push_back(LI);
+          illFormedLoads.push_back(LI);
 
           // Create a GEP instruction to replace the original load
           Value *zero = ConstantInt::get(Type::getInt32Ty(F.getContext()), 0);
@@ -115,18 +140,27 @@ bool HarmonizeTypePass::runOnFunction(Function &F) {
                                               LI->getPointerOperand(),
                                               "MMArrayPtr"));
 
-          newGEPs.push_back(GEP);
+          GEPforLoad.push_back(GEP);
           change = true;
+        }
+      } else if (isa<StoreInst>(&I)) {
+        StoreInst *SI = cast<StoreInst>(&I);
+        Type *ptrOpTy = SI->getPointerOperandType();
+        Type *valueTy = SI->getValueOperand()->getType();
+        Type *pointeeTy = cast<PointerType>(ptrOpTy)->getElementType();
+        if (pointeeTy->isMMArrayPointerTy() && !valueTy->isMMArrayPointerTy()) {
+          // Thi is an ill-formed store.
+          illFormedStores.push_back(SI);
         }
       }
     }
   }
 
-  // Replace old ill-formed loads with a new GEP and a new load of the
+  // Fix ill-formed loads with a new GEP and a new load of the
   // inner raw pointer.  Also replace the uses of the ill-formed loads
   // with the new load that is a complete MMArrayPtr.
-  for (unsigned i = 0; i < toDelLoads.size(); i++) {
-    Instruction *brokenLI = toDelLoads[i];
+  for (unsigned i = 0; i < illFormedLoads.size(); i++) {
+    Instruction *brokenLI = illFormedLoads[i];
     MMArrayLoads[i]->insertBefore(brokenLI);
     std::vector<Instruction *> InstToFix;
     for (User *U : brokenLI->users()) {
@@ -144,8 +178,36 @@ bool HarmonizeTypePass::runOnFunction(Function &F) {
 
     // Insert a new load that loads the inner raw pointer and replace the
     // ill-formed load with it.
-    newGEPs[i]->insertBefore(toDelLoads[i]);
-    ReplaceInstWithInst(toDelLoads[i], newLoads[i]);
+    GEPforLoad[i]->insertBefore(illFormedLoads[i]);
+    ReplaceInstWithInst(illFormedLoads[i], newLoads[i]);
+  }
+
+  // Fix ill-formed stores and related instructions.
+  for (unsigned i = 0; i < illFormedStores.size(); i++) {
+    StoreInst *illStore = illFormedStores[i];
+    Value *valueOp = illStore->getValueOperand();
+    // We have only seen this kind of ill-formed stores from "*++/--p"
+    // for MMArrayPtr.  The assert helps detect other cases.
+    assert(isa<InsertValueInst>(valueOp) && "Unknown ill-formed StoreInst");
+
+    // Restore the type of the MMSafePtr and get the inner raw pointer.
+    valueOp->mutateType(
+      cast<PointerType>(illStore->getPointerOperandType())->getElementType());
+    Value *rawPtr =
+      ExtractValueInst::Create(valueOp, 0, valueOp->getName() + "_innerPtr",
+                               illStore);
+
+    // Replace the uses of the ill-typed MMArrayPtr in load instructions with
+    // the extracted inner raw pointer.
+    std::vector<Instruction *> loadToFix;
+    for (User *U : valueOp->users()) {
+      if (LoadInst *load = dyn_cast<LoadInst>(U)) {
+        loadToFix.push_back(load);
+      }
+    }
+    for (Instruction *Inst : loadToFix) {
+      Inst->replaceUsesOfWith(valueOp, rawPtr);
+    }
   }
 
   return change;
