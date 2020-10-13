@@ -679,18 +679,18 @@ PointerType *PointerType::get(Type *EltTy, unsigned AddressSpace) {
 //
 // Method: PointerType::getMMPtr()
 //
-// This method builds a _MM_ptr pointer. Essentially we use a struct
-// to contain both the real pointer to the struct object and the ID which 
-// is a unsigned long type.
+// This method builds an _MM_ptr pointer. Essentially we use a struct
+// to contain both the raw C pointer to the struct object and the key which
+// is an unsigned long type.
 //
 // \param EltTy - the typ of the pointee.
 // \param Context - the LLVMContext.
 // \param AddressSpace - target address space
 //
-// \return a struct that contains a pointer to the pointee and an ID of
+// \return a struct that contains a pointer to the pointee and an key of
 //         64-bit integer.
 //
-StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context, 
+StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context,
                                       unsigned AddressSpace) {
   assert(EltTy && "Can't get a pointer to <null> type!");
   assert(isValidElementType(EltTy) && "Invalid type for pointer element!");
@@ -708,13 +708,13 @@ StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context,
 
   PointeeEntry->isMMPtr = true;
 
-  // Create an ID entry.
-  // Currently we hardcode the ID to be a 64-bit integer. This may affect
+  // Create an key entry.
+  // Currently we hardcode the key to be a 64-bit integer. This may affect
   // program's performance on a 32-bit platform. Maybe we should change it
   // to a "unsigned long" type.
-  IntegerType *IDEntry = Type::getInt64Ty(Context);
+  IntegerType *KeyEntry = Type::getInt64Ty(Context);
 
-  StructType *MMPtrStruct = StructType::get(PointeeEntry, IDEntry);
+  StructType *MMPtrStruct = StructType::get(PointeeEntry, KeyEntry);
   // Since StructType::get() is the primary way to create a literal struct
   // and it is a static method, we cannot pass a boolean to it to indicate
   // if this struct represents a _MM_ptr. So we set the isMMPtr
@@ -728,16 +728,16 @@ StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context,
 // Checked C
 // Method: PointerType::getMMArrayPtr()
 //
-// This method builds a _MM_array_ptr pointer. Essential we use a struct
-// to contain the raw pointer to the struct object, the ID, and the starting
-// address of the array.
+// This method builds an _MM_array_ptr pointer. Essential we use a struct
+// to contain the raw pointer to the array, the key, and the address of
+// the lock.
 //
 // \param EltTy - the typ of the pointee.
 // \param Context - the LLVMContext.
 // \param AddressSpace - target address space
 //
-// \return a struct that contains a pointer to the pointee, an ID of
-//         64-bit integer, and a pointer to the begining of the pointee.
+// \return a struct that contains a pointer to the pointee, an key of
+//         64-bit integer, and a pointer to the lock of the array.
 //
 StructType *PointerType::getMMArrayPtr(Type *EltTy, LLVMContext &Context,
                                        unsigned AddressSpace) {
@@ -759,8 +759,8 @@ StructType *PointerType::getMMArrayPtr(Type *EltTy, LLVMContext &Context,
   // Create a struct that contains all the three items of a _MM_array_ptr.
   StructType *MMArrayPtrStruct =
     StructType::get(PointeeEntry,
-                    getInt64Ty(Context),      // ID
-                    getInt64PtrTy(Context));  // pointer to ID.
+                    getInt64Ty(Context),      // key
+                    getInt64PtrTy(Context));  // pointer to lock.
   MMArrayPtrStruct->isMMArrayPtr = true;
 
   return MMArrayPtrStruct;

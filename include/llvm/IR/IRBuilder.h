@@ -1785,9 +1785,9 @@ public:
     // support cast from or to a struct directly. Here we simplily cast the
     // inner raw pointer of the Src to the type of the inner raw pointer
     // of the Dest. This should be safe because the compiler inserts dynamic
-    // ID checks for MMSafe pointers based on its clang::Type rather than
+    // key checks for MMSafe pointers based on its clang::Type rather than
     // its implementation, i.e., llvm::Type; so the compiler would not omit
-    // inserting necessary ID checking as long as the dereferenced pointer
+    // inserting necessary key checking as long as the dereferenced pointer
     // is semantically an MMSafe pointer.
     //
     // When an MMSafe pointer is explicitly cast to another MMSafe pointer
@@ -1875,21 +1875,21 @@ public:
   // cast is really safe, i.e., the destination pointed struct should be
   // rigorously a subset (starting from beginning) of the source pointed struct.
   //
-  // TODO: We should disaalow cast between _MM_ptr and _MM_array_ptr.
+  // TODO: We should disallow cast between _MM_ptr and _MM_array_ptr.
   // This can be done earlier during compilation.
   Value *CreateMMSafePtrCast(Value *Src, Type *DestTy,
                              const Twine &Name = "") {
     if (Src->getType() == DestTy) return Src;
 
     Value *SrcRawPtr = CreateExtractValue(Src, 0);
-    Value *SrcID = CreateExtractValue(Src, 1);
+    Value *SrcKey = CreateExtractValue(Src, 1);
     Value *DestRawPtr =
       CreatePointerCast(SrcRawPtr, cast<StructType>(DestTy)->getElementType(0));
     UndefValue *Dest = UndefValue::get(DestTy);
     Value *insertPtr = CreateInsertValue(Dest, DestRawPtr, 0);
-    Value *insertID = CreateInsertValue(insertPtr, SrcID, 1, Name);
-    if (DestTy->isMMPointerTy()) return insertID;
-    return CreateInsertValue(insertID, CreateExtractValue(Src, 2), 2, Name);
+    Value *insertKey = CreateInsertValue(insertPtr, SrcKey, 1, Name);
+    if (DestTy->isMMPointerTy()) return insertKey;
+    return CreateInsertValue(insertKey, CreateExtractValue(Src, 2), 2, Name);
   }
 
   //===--------------------------------------------------------------------===//
