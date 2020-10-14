@@ -105,9 +105,8 @@ HarmonizeTypePass::HarmonizeTypePass() : FunctionPass(ID) {
 bool HarmonizeTypePass::runOnFunction(Function &F) {
   bool change = false;
 
-  std::vector<Instruction *> illFormedLoads, GEPforLoad, newLoads;
-  std::vector<Instruction *> MMArrayLoads;
-  // ill-formed store instructions.
+  std::vector<LoadInst *> illFormedLoads;
+  std::vector<Instruction *> GEPforLoad, newLoads;
   std::vector<StoreInst *> illFormedStores;
 
   for (BasicBlock &BB : F) {
@@ -133,14 +132,8 @@ bool HarmonizeTypePass::runOnFunction(Function &F) {
           // Create a new load to load the raw C pointer from the new GEP.
           newLoads.push_back(new LoadInst(loadedType, GEP, "ObjRawPtr"));
 
-          // In case the ill-formed load results in ill-formed ExtractValue
-          // and InsertValue instructions, create a new load to load
-          // the whole MMArrayPtr.
-          MMArrayLoads.push_back(new LoadInst(pointeeTy,
-                                              LI->getPointerOperand(),
-                                              "MMArrayPtr"));
-
           GEPforLoad.push_back(GEP);
+
           change = true;
         }
       } else if (isa<StoreInst>(&I)) {
@@ -156,30 +149,39 @@ bool HarmonizeTypePass::runOnFunction(Function &F) {
     }
   }
 
-  // Fix ill-formed loads with a new GEP and a new load of the
-  // inner raw pointer.  Also replace the uses of the ill-formed loads
-  // with the new load that is a complete MMArrayPtr.
+  // Fix ill-formed loads and related instructions.
   for (unsigned i = 0; i < illFormedLoads.size(); i++) {
-    Instruction *brokenLI = illFormedLoads[i];
-    MMArrayLoads[i]->insertBefore(brokenLI);
+    LoadInst *illLoad = illFormedLoads[i];
     std::vector<Instruction *> InstToFix;
-    for (User *U : brokenLI->users()) {
+    for (User *U : illLoad->users()) {
       if (Instruction *Inst = dyn_cast<Instruction>(U)) {
         if (isa<ExtractValueInst>(Inst) || isa<InsertValueInst>(Inst)) {
-          // Collect all the ill-formed ExtractValueInst and InsertValueInst.
+          // Collect all the ill-formed ExtractValueInst and InsertValueInst
+          // resulting from the ill-formed load.
           InstToFix.push_back((Inst));
         }
       }
     }
-    // Replace all the uses of ill-formed loads.
-    for (Instruction *Inst : InstToFix) {
-      Inst->replaceUsesOfWith(brokenLI, MMArrayLoads[i]);
+    if (!InstToFix.empty()) {
+      // Create a new load to load the whole MMArrayPtr for the use in
+      // the ill-formed ExtractValueInst and InsertValueInst.
+      Type *pointeeTy =
+        cast<PointerType>(illLoad->getPointerOperandType())->getElementType();
+      LoadInst *MMArrayPtrLoad = new LoadInst(pointeeTy,
+                                     illLoad->getPointerOperand(),
+                                     "FullMMArrayPtr",
+                                     illLoad);
+      // Replace all the uses of the ill-formed load.
+      for (Instruction *Inst : InstToFix) {
+        Inst->replaceUsesOfWith(illLoad, MMArrayPtrLoad);
+      }
     }
 
-    // Insert a new load that loads the inner raw pointer and replace the
-    // ill-formed load with it.
-    GEPforLoad[i]->insertBefore(illFormedLoads[i]);
-    ReplaceInstWithInst(illFormedLoads[i], newLoads[i]);
+    // Insert a new load that loads the inner raw pointer and replaces the
+    // ill-formed load with it. The ReplaceInstWithInst() will automatically
+    // replaces all the uses of the ill-formed load with the new load.
+    GEPforLoad[i]->insertBefore(illLoad);
+    ReplaceInstWithInst(illLoad, newLoads[i]);
   }
 
   // Fix ill-formed stores and related instructions.
