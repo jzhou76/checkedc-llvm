@@ -112,36 +112,48 @@ bool Type::isEmptyTy() const {
   return false;
 }
 
-/// Testing if this represents a _MM_ptr type.
+/// Testing if this represents an _MM_ptr type.
 bool Type::isMMPointerTy() const {
   return isStructTy() && cast<StructType>(this)->isMMPointerRep();
 }
 
-/// Testing if this represents a _MM_array_ptr type.
+/// Testing if this represents an _MM_array_ptr type.
 bool Type::isMMArrayPointerTy() const {
   return isStructTy() && cast<StructType>(this)->isMMArrayPointerRep();
 }
 
-/// Test if this represents a _MM_ptr or a _MM_array_ptr tyep.
-bool Type::isMMSafePointerTy() const {
-  return isMMPointerTy() || isMMArrayPointerTy();
+/// Testing if this represents an _MM_array_ptr type.
+bool Type::isMMLargePointerTy() const {
+  return isStructTy() && cast<StructType>(this)->isMMLargePointerRep();
 }
 
-/// Return the type of the inner raw pointer inside a _MM_ptr.
+/// Test if this represents an MMSafe pointer.
+bool Type::isMMSafePointerTy() const {
+  return isMMPointerTy() || isMMArrayPointerTy() || isMMLargePointerTy();
+}
+
+/// Return the type of the inner raw pointer inside an _MM_ptr.
 PointerType *Type::getMMPtrInnerPtrTy() const {
-  assert(isMMPointerTy() && "This type is not a _MM_ptr.");
+  assert(isMMPointerTy() && "This type is not of _MM_ptr.");
   return cast<StructType>(this)->getMMPtrStructInnerPtrTy();
 }
 
-/// Return the type of the inner raw pointer inside a _MM_array_ptr.
+/// Return the type of the inner raw pointer inside an _MM_array_ptr.
 PointerType *Type::getMMArrayPtrInnerPtrTy() const {
-  assert(isMMArrayPointerTy() && "This type is not a _MM_array_ptr.");
+  assert(isMMArrayPointerTy() && "This type is not of _MM_array_ptr.");
   return cast<StructType>(this)->getMMArrayPtrStructInnerPtrTy();
 }
 
-/// Return the type of the inner raw pointer inside a _MM_ptr or _MM_array_ptr.
+/// Return the type of the inner raw pointer inside a _MM_large_ptr.
+PointerType *Type::getMMLargePtrInnerPtrTy() const {
+  assert(isMMLargePointerTy() && "This type is not of _MM_array_ptr.");
+  return cast<StructType>(this)->getMMLargePtrStructInnerPtrTy();
+}
+
+/// Return the type of the inner raw pointer inside an MMSafe pointer.
 PointerType *Type::getMMSafePtrInnerPtrTy() const {
-  return isMMPointerTy() ? getMMPtrInnerPtrTy() : getMMArrayPtrInnerPtrTy();
+  assert(isMMSafePointerTy() && "This type is not of MMSafe pointer.");
+  return cast<PointerType>(cast<StructType>(this)->getElementType(0));
 }
 
 unsigned Type::getPrimitiveSizeInBits() const {
@@ -680,18 +692,18 @@ PointerType *PointerType::get(Type *EltTy, unsigned AddressSpace) {
 // Method: PointerType::getMMPtr()
 //
 // This method builds an _MM_ptr pointer. Essentially we use a struct
-// to contain both the raw C pointer to the struct object and the key which
-// is an unsigned long type.
+// to contain both the raw C pointer to the pointed object and the key-offset
+// filed which is an uint64_t type for x86-64.
 //
 // \param EltTy - the typ of the pointee.
 // \param Context - the LLVMContext.
 // \param AddressSpace - target address space
 //
-// \return a struct that contains a pointer to the pointee and an key of
+// \return a struct that contains a pointer to the pointee and an key-offset of
 //         64-bit integer.
 //
 StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context,
-                                      unsigned AddressSpace) {
+                                  unsigned AddressSpace) {
   assert(EltTy && "Can't get a pointer to <null> type!");
   assert(isValidElementType(EltTy) && "Invalid type for pointer element!");
 
@@ -708,10 +720,8 @@ StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context,
 
   PointeeEntry->isMMPtr = true;
 
-  // Create an key entry.
-  // Currently we hardcode the key to be a 64-bit integer. This may affect
-  // program's performance on a 32-bit platform. Maybe we should change it
-  // to a "unsigned long" type.
+  // Create the key-offset entry.
+  // Currently we hardcode the key to be a 64-bit integer.
   IntegerType *KeyEntry = Type::getInt64Ty(Context);
 
   StructType *MMPtrStruct = StructType::get(PointeeEntry, KeyEntry);
@@ -726,9 +736,63 @@ StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context,
 
 //
 // Checked C
+//
 // Method: PointerType::getMMArrayPtr()
 //
-// This method builds an _MM_array_ptr pointer. Essential we use a struct
+// This method builds an _MM_array_ptr pointer. Essentially we use a struct
+// to contain both the raw C pointer to the pointed object and the key-offset
+// filed which is an uint64_t type for x86-64.
+//
+// Currently the implementation of the _MM_array_ptr is exactly same as
+// _MM_ptr. It is semantically more clear to put the implementations
+// to two methods. Also it would be easier for us to change it in the future.
+//
+// \param EltTy - the typ of the pointee.
+// \param Context - the LLVMContext.
+// \param AddressSpace - target address space
+//
+// \return a struct that contains a pointer to the pointee and an key-offset of
+//         64-bit integer.
+//
+StructType *PointerType::getMMArrayPtr(Type *EltTy, LLVMContext &Context,
+                                  unsigned AddressSpace) {
+  assert(EltTy && "Can't get a pointer to <null> type!");
+  assert(isValidElementType(EltTy) && "Invalid type for pointer element!");
+
+  LLVMContextImpl *CImpl = EltTy->getContext().pImpl;
+
+  // Since AddressSpace #0 is the common case, we special case it.
+  PointerType *&PointeeEntry = AddressSpace == 0 ? CImpl->PointerTypes[EltTy]
+     : CImpl->ASPointerTypes[std::make_pair(EltTy, AddressSpace)];
+
+  // Create a pointer to the pointee.
+  if (!PointeeEntry) {
+    PointeeEntry = new (CImpl->TypeAllocator) PointerType(EltTy, AddressSpace);
+  }
+
+  // Unneeded?
+  PointeeEntry->isMMArrayPtr = true;
+
+  // Create the key-offset entry.
+  // Currently we hardcode the key-offset to be a 64-bit integer.
+  IntegerType *KeyOffsetEntry = Type::getInt64Ty(Context);
+
+  StructType *MMArrayPtrStruct = StructType::get(PointeeEntry, KeyOffsetEntry);
+  // Since StructType::get() is the primary way to create a literal struct
+  // and it is a static method, we cannot pass a boolean to it to indicate
+  // if this struct represents a _MM_array_ptr. So we set the isMMArrayPtr
+  // field separately here.
+  MMArrayPtrStruct->isMMArrayPtr = true;
+
+  return MMArrayPtrStruct;
+}
+
+
+//
+// Checked C
+// Method: PointerType::getMMLargePtr()
+//
+// This method builds an _MM_large_ptr pointer. Essential we use a struct
 // to contain the raw pointer to the array, the key, and the address of
 // the lock.
 //
@@ -739,7 +803,7 @@ StructType *PointerType::getMMPtr(Type *EltTy, LLVMContext &Context,
 // \return a struct that contains a pointer to the pointee, an key of
 //         64-bit integer, and a pointer to the lock of the array.
 //
-StructType *PointerType::getMMArrayPtr(Type *EltTy, LLVMContext &Context,
+StructType *PointerType::getMMLargePtr(Type *EltTy, LLVMContext &Context,
                                        unsigned AddressSpace) {
   assert(EltTy && "Can't get a pointer to <null> type!");
   assert(isValidElementType(EltTy) && "Invalid type for pointer element!");
@@ -754,16 +818,16 @@ StructType *PointerType::getMMArrayPtr(Type *EltTy, LLVMContext &Context,
   if (!PointeeEntry) {
     PointeeEntry = new (CImpl->TypeAllocator) PointerType(EltTy, AddressSpace);
   }
-  PointeeEntry->isMMArrayPtr = true;
+  PointeeEntry->isMMLargePtr = true;
 
   // Create a struct that contains all the three items of a _MM_array_ptr.
-  StructType *MMArrayPtrStruct =
+  StructType *MMLargePtrStruct =
     StructType::get(PointeeEntry,
                     getInt64Ty(Context),      // key
                     getInt64PtrTy(Context));  // pointer to lock.
-  MMArrayPtrStruct->isMMArrayPtr = true;
+  MMLargePtrStruct->isMMLargePtr = true;
 
-  return MMArrayPtrStruct;
+  return MMLargePtrStruct;
 }
 
 

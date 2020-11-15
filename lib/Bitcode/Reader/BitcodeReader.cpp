@@ -3399,9 +3399,10 @@ Error BitcodeReader::typeCheckLoadStoreInst(Type *ValType, Type *PtrType) {
     return error("Load/Store operand is not a pointer type");
   Type *ElemType = cast<PointerType>(PtrType)->getElementType();
 
-  if (ValType && ValType != ElemType)
+  if (ValType && ValType != ElemType) {
     return error("Explicit load/store type does not match pointee "
                  "type of pointer operand");
+  }
   if (!PointerType::isLoadableOrStorableType(ElemType))
     return error("Cannot load/store from pointer");
   return Error::success();

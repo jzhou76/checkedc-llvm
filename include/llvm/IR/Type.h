@@ -229,7 +229,10 @@ public:
   /// True if this is a _MM_array_ptr type.
   bool isMMArrayPointerTy() const;
 
-  /// True if this is a _MM_ptr or _MM_array_ptr tyep.
+  /// True if this is a _MM_large_ptr type.
+  bool isMMLargePointerTy() const;
+
+  /// True if this is a _MM_ptr, _MM_array_ptr, or _MM_large_ptr type.
   bool isMMSafePointerTy() const;
 
   /// Return true if this is a pointer type or a vector of pointer types.
@@ -393,7 +396,10 @@ public:
   /// Return the type of the raw pointer inside an _MM_array_ptr.
   PointerType *getMMArrayPtrInnerPtrTy() const;
 
-  /// Return the tyep of the raw pointer inside an _MM_ptr or _MM_array_ptr.
+  /// Return the type of the raw pointer inside an _MM_large_ptr.
+  PointerType *getMMLargePtrInnerPtrTy() const;
+
+  /// Return the type of the raw pointer inside an MMSafe pointer.
   PointerType *getMMSafePtrInnerPtrTy() const;
 
   /// Get the address space of this pointer or pointer vector type.

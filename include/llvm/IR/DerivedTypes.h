@@ -223,6 +223,8 @@ public:
   bool isMMPtr = false;
   // Whether this struct is an instance of a _MM_array_ptr.
   bool isMMArrayPtr = false;
+  // Wheter this struct is an instance of a _MM_large_ptr.
+  bool isMMLargePtr = false;
 
   /// This creates an identified struct.
   static StructType *create(LLVMContext &Context, StringRef Name);
@@ -285,8 +287,13 @@ public:
   /// Return true if this represents a _MM_array_ptr<T>.
   bool isMMArrayPointerRep() const { return isMMArrayPtr; }
 
-  /// Return true if this represents a _MM_ptr or _MM_array_ptr.
-  bool isMMSafePointerRep() const { return isMMPtr || isMMArrayPtr; }
+  /// Return true if this represents a _MM_large_ptr<T>.
+  bool isMMLargePointerRep() const { return isMMLargePtr; }
+
+  /// Return true if this represents any MMSafe pointer.
+  bool isMMSafePointerRep() const {
+    return isMMPtr || isMMArrayPtr || isMMLargePtr;
+  }
 
   /// Return the type of the raw pointer inside a _MM_ptr.
   PointerType *getMMPtrStructInnerPtrTy() const {
@@ -302,10 +309,17 @@ public:
     return cast<PointerType>(getElementType(0));
   }
 
+  /// Return the type of the raw pointer inside the _MM_array_ptr.
+  PointerType *getMMLargePtrStructInnerPtrTy() const {
+    assert(isMMLargePointerRep() &&
+        "This struct does not represent a _MM_large_ptr.");
+    return cast<PointerType>(getElementType(0));
+  }
+
   /// Return the type of the raw pointer inside a _MM_ptr or _MM_array_ptr.
   PointerType *getMMSafePtrStructInnerPtrTy() const {
-    assert((isMMPointerRep() || isMMArrayPointerRep()) &&
-        "This struct represents neither a _MM_ptr nor a _MM_array_ptr.");
+    assert(isMMSafePointerRep() &&
+        "This struct does not represent any MMSafe pointer.");
     return cast<PointerType>(getElementType(0));
   }
 
@@ -506,6 +520,7 @@ class PointerType : public Type {
 
   bool isMMPtr = false;
   bool isMMArrayPtr = false;
+  bool isMMLargePtr = false;
 
 public:
   PointerType(const PointerType &) = delete;
@@ -515,15 +530,21 @@ public:
   /// address space.
   static PointerType *get(Type *ElementType, unsigned AddressSpace);
 
-  /// This constructs a _MM_ptr pointer to a struct object in a numbered
-  /// address space.
+  /// This constructs a _MM_ptr to a singleton memory object in a
+  /// numbered address space.
   static StructType *getMMPtr(Type *EltTy, LLVMContext &Context,
                               unsigned AddressSpace);
 
-  /// This constructs a _MM_array_ptr pointer to an array object in a
-  /// numbered address space.
+  /// This constructs a _MM_array_ptr to an array less than 4GB
+  /// in a numbered address space.
   static StructType *getMMArrayPtr(Type *EtTy, LLVMContext &Context,
                                    unsigned AddressSpace);
+
+  /// This constructs a _MM_large_ptr to an array greater than 4GB
+  /// in a numbered address space.
+  static StructType *getMMLargePtr(Type *EtTy, LLVMContext &Context,
+                                   unsigned AddressSpace);
+
 
   /// This constructs a pointer to an object of the specified type in the
   /// generic address space (address space zero).
@@ -533,14 +554,19 @@ public:
 
   Type *getElementType() const { return PointeeTy; }
 
-  /// Return true if this is a _MM_ptr<T> pointer.
+  /// Return true if this is an _MM_ptr.
   bool isMMPointerTy() const { return isMMPtr; }
 
-  /// Return true if this is a _MM_array_ptr pointer.
+  /// Return true if this is an _MM_array_ptr.
   bool isMMArrayPointerTy() const { return isMMArrayPtr; }
 
-  /// Return true if this is a memory-management-safe pointer.
-  bool isMMSafePointerTy() const { return isMMPtr || isMMArrayPtr; }
+  /// Return true if this is an _MM_large_ptr.
+  bool isMMLargePointerTy() const { return isMMLargePtr; }
+
+  /// Return true if this is an MMSafe pointer.
+  bool isMMSafePointerTy() const {
+    return isMMPtr || isMMArrayPtr || isMMLargePtr;
+  }
 
   /// Return true if the specified type is valid as a element type.
   static bool isValidElementType(Type *ElemTy);
