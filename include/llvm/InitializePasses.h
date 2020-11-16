@@ -163,7 +163,7 @@ void initializeGlobalOptLegacyPassPass(PassRegistry&);
 void initializeGlobalSplitPass(PassRegistry&);
 void initializeGlobalsAAWrapperPassPass(PassRegistry&);
 void initializeGuardWideningLegacyPassPass(PassRegistry&);
-void initializeHarmonizeTypePassPass(PassRegistry&);  // Checked C
+void initializeCheckedCHarmonizeTypePassPass(PassRegistry&);  // Checked C
 void initializeHotColdSplittingLegacyPassPass(PassRegistry&);
 void initializeHWAddressSanitizerPass(PassRegistry&);
 void initializeIPCPPass(PassRegistry&);

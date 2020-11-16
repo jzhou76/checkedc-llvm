@@ -25,10 +25,10 @@
 #include <vector>
 
 using namespace llvm;
-using namespace harmonizeType;
+using namespace CheckedCHarmonizeType;
 
-HarmonizeTypePass::HarmonizeTypePass() : FunctionPass(ID) {
-  initializeHarmonizeTypePassPass(*PassRegistry::getPassRegistry());
+CheckedCHarmonizeTypePass::CheckedCHarmonizeTypePass() : FunctionPass(ID) {
+  initializeCheckedCHarmonizeTypePassPass(*PassRegistry::getPassRegistry());
 }
 
 /**
@@ -102,7 +102,7 @@ HarmonizeTypePass::HarmonizeTypePass() : FunctionPass(ID) {
  * "%3 = load i32, i32* %_innerPtr1, align 4".
  *
  * */
-bool HarmonizeTypePass::runOnFunction(Function &F) {
+bool CheckedCHarmonizeTypePass::runOnFunction(Function &F) {
   bool change = false;
 
   std::vector<LoadInst *> illFormedLoads;
@@ -221,7 +221,7 @@ bool HarmonizeTypePass::runOnFunction(Function &F) {
  *
  * This function prints out certain information about a load instruction.
  * */
-void HarmonizeTypePass::examineLoadInst(LoadInst &LI) const {
+void CheckedCHarmonizeTypePass::examineLoadInst(LoadInst &LI) const {
   Type *loadedType = LI.getType();
   Type *ptrOpTy = LI.getPointerOperandType();
   Type *pointeeTy = dyn_cast<PointerType>(ptrOpTy)->getElementType();
@@ -235,12 +235,12 @@ void HarmonizeTypePass::examineLoadInst(LoadInst &LI) const {
 }
 #endif
 
-char HarmonizeTypePass::ID = 0;
+char CheckedCHarmonizeTypePass::ID = 0;
 
-INITIALIZE_PASS(HarmonizeTypePass, "harmonizetype",
-                "MMSafePtr type mediator", false, false)
+INITIALIZE_PASS(CheckedCHarmonizeTypePass, "harmonizetype",
+                "MMSafePtr type mismatch mediator", false, false)
 
 // Public interface to the HarmonizeType pass
-FunctionPass *llvm::createHarmonizeTypePass() {
-  return new HarmonizeTypePass();
+FunctionPass *llvm::createCheckedCHarmonizeTypePass() {
+  return new CheckedCHarmonizeTypePass();
 }

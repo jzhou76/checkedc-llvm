@@ -8,35 +8,35 @@
 //===----------------------------------------------------------------------===//
 //
 // This pass tries to resolve the type mismatch problem caused by Checked C's
-// new safe pointers for temporal memory safety: those new types of pointers
-// are implemented as llvm::StructType, while by default pointers are
-// implemented as llvm::PointerType.
+// new safe pointers for temporal memory safety. The root casue is that
+// the new types of pointers are implemented as llvm::StructType,
+// while by default pointers are implemented as llvm::PointerType.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_IR_HARMONIZETYPE_H
-#define LLVM_IR_HARMONIZETYPE_H
+#ifndef LLVM_IR_CHECKEDCHARMONIZETYPE_H
+#define LLVM_IR_CHECKEDCHARMONIZETYPE_H
 
 #include "llvm/IR/PassManager.h"
 #include "Instructions.h"
 
 namespace llvm {
-namespace harmonizeType {
+namespace CheckedCHarmonizeType {
 
-struct HarmonizeTypePass : FunctionPass {
+struct CheckedCHarmonizeTypePass : FunctionPass {
   static char ID;
 
-  HarmonizeTypePass();
+  CheckedCHarmonizeTypePass();
 
   bool runOnFunction(Function &F) override;
 
   void examineLoadInst(LoadInst &LI) const;
 };
 
-} // End of namespace harmonizeType
+} // End of namespace CheckedCHarmonizeType
 
-FunctionPass *createHarmonizeTypePass();
+FunctionPass *createCheckedCHarmonizeTypePass();
 
 } // End of namespace llvm
 
-#endif // LLVM_IR_HARMONIZETYPE_H
+#endif // LLVM_IR_CHECKEDCHARMONIZETYPE_H
