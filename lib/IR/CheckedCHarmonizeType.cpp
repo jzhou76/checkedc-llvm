@@ -57,6 +57,8 @@ CheckedCHarmonizeTypePass::CheckedCHarmonizeTypePass() : FunctionPass(ID) {
  *   %Struct_Ptr = getelementptr { %struct.Node*, i64 }, { %struct.Node*, i64 }* %p, i32 0, i32 0
  *   %loadStructPtr = load %struct.Node*, %struct.Node** %Struct_Ptr
  *
+ * ------------------------------split line-------------------------------------
+ *
  * Further more, an ill-formed load will also contaminate the ExtractValue
  * and InsertValue instructions created for MMArrayPtr ++/-- operators.
  * For example, for *p++/--, the following code would be created:
@@ -80,10 +82,12 @@ CheckedCHarmonizeTypePass::CheckedCHarmonizeTypePass() : FunctionPass(ID) {
  * the ++/-- operator does not use the type-crippled MMArrayPtr but uses
  * a complete MMArrayPtr loaded earlier.
  *
+ * ------------------------------split line-------------------------------------
+ *
  * A syntax that will cause ill-formed stores is "*++/--p" for MMArrayPtr.
  * Because the increment/decrement operator generates an Address for
  * an MMArrayPtr with mutated type, the following store instruction is broken.
- * To be more specific, code like the following snnipet would be created:
+ * To be more specific, code like the following snippet would be created:
  *
  *   %2 = insertvalue { i32*, i64, i64* } %1, i32* %incdec.ptr, 0
  *   store i32* %2, { i32*, i64, i64* }* %p, align 32
@@ -101,6 +105,30 @@ CheckedCHarmonizeTypePass::CheckedCHarmonizeTypePass() : FunctionPass(ID) {
  * "%3 = load i32, i32* %2, align 4" to
  * "%3 = load i32, i32* %_innerPtr1, align 4".
  *
+ * ------------------------------split line-------------------------------------
+ * Type mismatch caused by directly dereferencing a pointer arithmetic.
+ *
+ * Directly dereferencing the result of an mm_array_ptr arithmetic would
+ * cause a subtle type mismatch because the result of a pointer arithmetic
+ * is a new mm_array_ptr constructed by InsertValueInst, and the direct
+ * dereference would create an clang::Address that mutates the type of the new
+ * mm_array_ptr. For example, for "*(p + 2)" where p is a mm_array_ptr<int>,
+ * the following IR would be generated (-O0):
+ *
+ *     // constructing the new mm_array_ptr
+ *     ...
+ *     %8 = insertvalue { i32*, i64, i64* } %7, i64* %5, 2
+ *     ...
+ *     %9 = load i32, i32* %8, align 4
+ *
+ * Here the load is well-formed but we still have a latent type mismatch.
+ * This pass will restore the type of the InsertValueInst and replaced the
+ * load with a new one. The fixed instruction sequence would be like:
+ *
+ *     %8 = insertvalue { i32*, i64, i64* } %7, i64* %5, 2
+ *     ...
+ *     %_innerPtr2 = extractvalue { i32*, i64, i64* } %8, 0
+ *     %FixedLoad = load i32, i32* %_innerPtr2
  * */
 bool CheckedCHarmonizeTypePass::runOnFunction(Function &F) {
   bool change = false;
@@ -108,33 +136,38 @@ bool CheckedCHarmonizeTypePass::runOnFunction(Function &F) {
   std::vector<LoadInst *> illFormedLoads;
   std::vector<Instruction *> GEPforLoad, newLoads;
   std::vector<StoreInst *> illFormedStores;
+  std::vector<std::pair<InsertValueInst *, LoadInst *>> illInsertValueLoad;
 
   for (BasicBlock &BB : F) {
     for (Instruction &I : BB) {
       if (isa<LoadInst>(&I)) {
         LoadInst *LI = cast<LoadInst>(&I);
-        Type *ptrOpTy = LI->getPointerOperandType();
+        Value *loadPtr = LI->getPointerOperand();
+        Type *ptrOpTy = loadPtr->getType();
         Type *loadedType = LI->getType();
         Type *pointeeTy = cast<PointerType>(ptrOpTy)->getElementType();
         if (pointeeTy->isMMSafePointerTy() &&
             !loadedType->isMMSafePointerTy()) {
-          // This is an ill-formed load.
-          // Put this load to the to-delete list.
+          // This is an ill-formed load.  Put it to the to-delete list.
           illFormedLoads.push_back(LI);
 
           // Create a GEP instruction to replace the original load
           Value *zero = ConstantInt::get(Type::getInt32Ty(F.getContext()), 0);
           GetElementPtrInst *GEP =
-            GetElementPtrInst::Create(pointeeTy,
-                                      LI->getPointerOperand(),
+            GetElementPtrInst::Create(pointeeTy, loadPtr,
                                       ArrayRef<Value *>({zero, zero}),
                                       "ObjRawPtr_Ptr");
+          GEPforLoad.push_back(GEP);
           // Create a new load to load the raw C pointer from the new GEP.
           newLoads.push_back(new LoadInst(loadedType, GEP, "ObjRawPtr"));
-
-          GEPforLoad.push_back(GEP);
-
           change = true;
+        } else {
+          if (InsertValueInst *IVI = dyn_cast<InsertValueInst>(loadPtr)) {
+            // A type mismatch due to direct dereference of pointer arithmetic.
+            illInsertValueLoad.push_back(
+                std::pair<InsertValueInst*, LoadInst*>(IVI, LI));
+            change = true;
+          }
         }
       } else if (isa<StoreInst>(&I)) {
         StoreInst *SI = cast<StoreInst>(&I);
@@ -144,6 +177,7 @@ bool CheckedCHarmonizeTypePass::runOnFunction(Function &F) {
         if (pointeeTy->isMMArrayPointerTy() && !valueTy->isMMArrayPointerTy()) {
           // Thi is an ill-formed store.
           illFormedStores.push_back(SI);
+          change = true;
         }
       }
     }
@@ -210,6 +244,19 @@ bool CheckedCHarmonizeTypePass::runOnFunction(Function &F) {
     for (Instruction *Inst : loadToFix) {
       Inst->replaceUsesOfWith(valueOp, rawPtr);
     }
+  }
+
+  // Fix type mismatch caused by direct dereference of pointer arithmetic.
+  for (unsigned i = 0; i < illInsertValueLoad.size(); i++) {
+    InsertValueInst *loadPtr = illInsertValueLoad[i].first;
+    LoadInst *load = illInsertValueLoad[i].second;
+    // Restore the type of the InsertValueInst.
+    loadPtr->mutateType(loadPtr->getAggregateOperand()->getType());
+    // Extract the inner raw pointer, create a new load of it, and
+    // replace the ill-formed load with the new load.
+    Value *rawPtr =
+      ExtractValueInst::Create(loadPtr, 0, "_innerPtr", load);
+    ReplaceInstWithInst(load, new LoadInst(load->getType(), rawPtr, "FixedLoad"));
   }
 
   return change;
