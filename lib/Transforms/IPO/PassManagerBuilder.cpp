@@ -42,6 +42,7 @@
 #include "llvm/Transforms/Scalar/SimpleLoopUnswitch.h"
 #include "llvm/Transforms/Utils.h"
 #include "llvm/Transforms/Vectorize.h"
+#include "llvm/Transforms/Scalar/CheckedCKeyCheckOpt.h"
 
 using namespace llvm;
 
@@ -159,6 +160,12 @@ static cl::opt<bool> EnableGVNSink(
 static cl::opt<bool>
     EnableCHR("enable-chr", cl::init(true), cl::Hidden,
               cl::desc("Enable control height reduction optimization (CHR)"));
+
+// Checked C Key Check Optimization pass. It is on by default.
+static cl::opt<bool>
+CheckedCKeyCheckOpt("checkedc-keycheck-opt", cl::init(true), cl::Hidden,
+                    cl::desc("Intra-procedural data-flow analysis that removes"
+                              "unneeded key checks on MMSafe pointers"));
 
 PassManagerBuilder::PassManagerBuilder() {
     OptLevel = 2;
@@ -428,6 +435,11 @@ void PassManagerBuilder::populateModulePassManager(
   if (!PGOSampleUse.empty()) {
     MPM.add(createPruneEHPass());
     MPM.add(createSampleProfileLoaderPass(PGOSampleUse));
+  }
+
+  // Checked C
+  if (CheckedCKeyCheckOpt) {
+    MPM.add(createCheckedCKeyCheckOptPass());
   }
 
   // Allow forcing function attributes as a debugging and tuning aid.
