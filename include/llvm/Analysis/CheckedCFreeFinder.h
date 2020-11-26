@@ -16,6 +16,7 @@
 #define LLVM_TRANSFORM_SCALAR_CHECKEDCFREEFINDER_H
 
 #include "llvm/IR/PassManager.h"
+#include "llvm/Support/CheckedCUtil.h"
 
 namespace llvm{
 
@@ -25,6 +26,9 @@ struct CheckedCFreeFinderPass : ModulePass {
   CheckedCFreeFinderPass();
 
   StringRef getPassName() const override;
+
+  // A set of functions that may directly or indirectly free heap objects.
+  FnSet_t MayFreeFns;
 
   bool runOnModule(Module &M) override;
 
