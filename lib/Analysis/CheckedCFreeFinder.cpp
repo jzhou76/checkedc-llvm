@@ -1,4 +1,4 @@
-//===- CheckedCFreeFinder.cpp - Find Functions that may Free Heap Object---===//
+//===- CheckedCFreeFinder.cpp - Find Calls that may Free Heap Object-------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -6,15 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implments the pass of finding all functions that may directly or
-// indirectly (by its call-chain descendents) free memory object(s) pointed
+// This file implments the pass of finding all function calls that may directly
+// or indirectly (by its call-chain descendents) free memory object(s) pointed
 // by mmsafe pointers. It uses llvm's CallGraph analysis results to query
 // the call relations of the functions in the current module.
 //
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/CheckedCFreeFinder.h"
-#include "llvm/Analysis/CallGraph.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <stack>
@@ -58,7 +57,7 @@ void CheckedCFreeFinderPass::getAnalysisUsage(AnalysisUsage &AU) const {
 //
 // This is a helper function for FindMayFreeFns().
 //
-static void FnReachAnalysis(Module &M, CallGraph &CG) {
+void CheckedCFreeFinderPass::FnReachAnalysis(Module &M, CallGraph &CG) {
   std::stack<Function *> workingList;
   for (Function &F : M) {
     if (F.isDeclaration() || F.getName().contains("PtrKeyCheck")) continue;
@@ -121,27 +120,32 @@ static void FnReachAnalysis(Module &M, CallGraph &CG) {
 }
 
 //
-// Function: FindMayFreeFns()
+// Function: FindMayFreeCalls()
 //
-// This function finds which user defined functions in the current module
-// may directly or indirectly frees heap memory. It conservertively assuems
-// that a function may free heap objects if it
-// 1. has indirect call(s) that is not resolved by compiler or
-// 2. calls functions defined in other module or library that or
-// 3. indirectly calls a function that meets one of the first two conditions.
+// This function finds all call instructions in user-defined functions in the
+// current module may directly or indirectly frees heap memory.
+// It conservertively assuems that a function call may free heap objects if it
+//
+//   1. is an indirect call that is not resolved by compiler or
+//   2. calls a function defined in another module or library or
+//   3. calls a function that meets one of the first two conditions.
 //
 // For the second condition, we have a whitelist that contains all the functions
 // that we are sure will not free memory, such as malloc. We need expand the
 // list to include almost all libc functions.
 //
-// The algorithm is straightforward. First, it finds all the functions that
-// directly meets condition 1 or 2. Second, it uses the result from the
-// function-reaching analysis to find all the functions that may reach
-// the functions found in step 1.
+// Algorithm:
+//  1. It finds all the calls of condition 1 or 2; and it also records which
+//  function contains such calls.
+//  2. It uses the result from the function-reaching analysis to find all the
+//  functions (defined in the current module) that call the
+//  functions found in step 1.
+//  3. It finds calls to all the may-free functions found in step 1 and 2.
 //
-static void FindMayFreeFns(Module &M, CallGraph &CG, FnSet_t MayFreeFns) {
+void CheckedCFreeFinderPass::FindMayFreeCalls(Module &M, CallGraph &CG) {
   MayFreeFnWL.insert(M.getName().str() + "_MMPtrKeyCheck");
   MayFreeFnWL.insert(M.getName().str() + "_MMArrayPtrKeyCheck");
+
   for (Function &caller : M) {
     if (caller.isDeclaration() || caller.getName().contains("PtrKeyCheck")) {
       // Skip functions defined outside this module and the key check functions.
@@ -153,17 +157,48 @@ static void FindMayFreeFns(Module &M, CallGraph &CG, FnSet_t MayFreeFns) {
       if (callee == NULL || (callee->isDeclaration() &&
           MayFreeFnWL.find(callee->getName()) == MayFreeFnWL.end())) {
         // We conservatively assume all indirect calls may free heap objects.
-        // Also all functions not defined in this module may free heap.
+        // Also all functions not defined in this module may free heap except
+        // the ones in the whilelist.
         MayFreeFns.insert(&caller);
-        break;
+        MayFreeCalls.insert(cast<Instruction>(CGNI->first.operator->()));
       }
     }
   }
 
-  // Find functions that indirectly call free.
+  // Find functions (defined in the current module) that may indirectly free.
   for (Function *MayFreeFn : MayFreeFns) {
     for (Function *caller : FnReached[MayFreeFn]) {
       MayFreeFns.insert(caller);
+    }
+  }
+
+#if 0
+  // Alternative implementation for step 2. It should be faster.
+  FnSet_t tmp(MayFreeFns.begin(), MayFreeFns.end());
+  bool change;
+  do {
+    change = false;
+    FnSet_t tmp2;
+    for (Function *F : tmp) {
+      for (User *U : F->users()) {
+        if (CallBase *call = dyn_cast<CallBase>(U)) {
+          change = true;
+          if (call->getFunction()->getName() == "main") continue;
+          tmp2.insert(call->getFunction());
+          MayFreeFns.insert(call->getFunction());
+        }
+      }
+    }
+    tmp = tmp2;
+  } while (change);
+#endif
+
+  // Find calls to functions defined in the current module that may free.
+  for (Function *F : MayFreeFns) {
+    for (User *U : F->users()) {
+      if (CallBase *call = dyn_cast<CallBase>(U)) {
+        MayFreeCalls.insert(call);
+      }
     }
   }
 }
@@ -191,10 +226,13 @@ static void dumpFnReachingResult(FnFnSetMap_t &funcReaching) {
 //
 // Dump a list of functions.
 //
-static void dumpFuncSet(FnSet_t &funcs, std::string msg) {
+template<typename T>
+static void dumpSet(std::unordered_set<T*> S, std::string msg) {
   errs() << msg << "\n";
-  for (Function *F : funcs) {
-    errs() << F->getName() << "\n";
+  if (std::is_same<T, Function>::value) {
+    for (T *elem : S) { errs() << elem->getName() << "\n"; }
+  } else if (std::is_base_of<Instruction, T>::value) {
+    for (T *elem : S) elem->dump();
   }
 }
 #endif
@@ -207,7 +245,7 @@ bool CheckedCFreeFinderPass::runOnModule(Module &M) {
   CallGraph &CG = getAnalysis<CallGraphWrapperPass>().getCallGraph();
 
   FnReachAnalysis(M, CG);
-  FindMayFreeFns(M, CG, MayFreeFns);
+  FindMayFreeCalls(M, CG);
 
   return false;
 }

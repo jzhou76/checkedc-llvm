@@ -20,8 +20,11 @@
 namespace llvm {
 
 typedef std::vector<Function *> FnList_t;
+typedef std::unordered_set<BasicBlock *> BBSet_t;
+typedef std::unordered_set<Instruction *> InstSet_t;
 typedef std::unordered_set<Function *> FnSet_t;
 typedef std::unordered_map<Function *, FnSet_t> FnFnSetMap_t;
+typedef std::unordered_map<Function *, BBSet_t> FnBBSetMap_t;
 
 } // end of llvm namespace
 

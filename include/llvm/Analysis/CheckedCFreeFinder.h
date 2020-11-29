@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 /// \file
-/// This file provides the inferface for the pass of finding all functions that
-/// may directly or indirectly (by its call-chain descendents) free memory
+/// This file provides the inferface for the pass of finding all function calls
+/// that may directly or indirectly (by its call-chain descendents) free memory
 /// object(s) pointed by mmsafe pointers.
 ///
 //===----------------------------------------------------------------------===//
@@ -16,6 +16,7 @@
 #define LLVM_TRANSFORM_SCALAR_CHECKEDCFREEFINDER_H
 
 #include "llvm/IR/PassManager.h"
+#include "llvm/Analysis/CallGraph.h"
 #include "llvm/Support/CheckedCUtil.h"
 
 namespace llvm{
@@ -27,12 +28,21 @@ struct CheckedCFreeFinderPass : ModulePass {
 
   StringRef getPassName() const override;
 
-  // A set of functions that may directly or indirectly free heap objects.
-  FnSet_t MayFreeFns;
+  // A set of call instructions that may directly or indirectly free heap memory.
+  InstSet_t MayFreeCalls;
 
   bool runOnModule(Module &M) override;
 
   void getAnalysisUsage(AnalysisUsage &AU) const override;
+
+private:
+  // A set of functions that may directly or indirectly free heap objects.
+  FnSet_t MayFreeFns;
+  // Find which function calls which function(s) based on CallGraph.
+  void FnReachAnalysis(Module &M, CallGraph &CG);
+
+  // Find call instructions that may cause freeing heap objects.
+  void FindMayFreeCalls(Module &M, CallGraph &CG);
 };
 
 ModulePass *createCheckedCFreeFinderPass(void);
