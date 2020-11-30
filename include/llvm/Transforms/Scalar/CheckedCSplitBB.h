@@ -15,6 +15,7 @@
 #define LLVM_TRANSFORM_SCALAR_CHECKEDCSPLITBB_H
 
 #include "llvm/IR/PassManager.h"
+#include "llvm/Analysis/CheckedCFreeFinder.h"
 
 namespace llvm{
 
@@ -25,9 +26,15 @@ struct CheckedCSplitBBPass : ModulePass {
 
   StringRef getPassName() const override;
 
+  // Basic Blocks that only contains a call instruction that may free.
+  BBSet_t MayFreeBBs;
+
   bool runOnModule(Module &M) override;
 
   void getAnalysisUsage(AnalysisUsage &AU) const override;
+
+private:
+  void SplitBB(Module &M, InstSet_t &MayFreeCalls);
 };
 
 ModulePass *createCheckedCSplitBBPass(void);

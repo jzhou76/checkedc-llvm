@@ -205,6 +205,7 @@ void CheckedCFreeFinderPass::FindMayFreeCalls(Module &M, CallGraph &CG) {
 
 //---- Debugging helper functions --------------------------------------------//
 #if 0
+
 //
 // dumpFnReachingResult()
 //
@@ -223,18 +224,6 @@ static void dumpFnReachingResult(FnFnSetMap_t &funcReaching) {
   errs() << "========== End of Printing Function-Reaching Data ==========\n";
 }
 
-//
-// Dump a list of functions.
-//
-template<typename T>
-static void dumpSet(std::unordered_set<T*> S, std::string msg) {
-  errs() << msg << "\n";
-  if (std::is_same<T, Function>::value) {
-    for (T *elem : S) { errs() << elem->getName() << "\n"; }
-  } else if (std::is_base_of<Instruction, T>::value) {
-    for (T *elem : S) elem->dump();
-  }
-}
 #endif
 //---- End of debugging helper functions -------------------------------------//
 

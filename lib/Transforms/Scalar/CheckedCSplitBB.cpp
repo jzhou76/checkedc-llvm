@@ -15,7 +15,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar/CheckedCSplitBB.h"
-#include "llvm/Analysis/CheckedCFreeFinder.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -36,14 +35,35 @@ void CheckedCSplitBBPass::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 //
+// Function: SplitBB()
+//
+// This function splits each basic block that has at least one function call
+// that may free heap objects. The result is every new basic block either has
+// no function calls that may free or has at most one function call that
+// may free.
+//
+void CheckedCSplitBBPass::SplitBB(Module &M, InstSet_t &MayFreeCalls) {
+  for (Instruction *Call : MayFreeCalls) {
+    Instruction *CallNextInst = Call->getNextNode();
+    assert(CallNextInst && "Next Instruction of the CallInst is NULL");
+    BasicBlock *BB = Call->getParent();
+    BasicBlock *newBB = BB;
+    if (BB->getFirstNonPHI() != Call) {
+      newBB = BB->splitBasicBlock(Call);
+    }
+    newBB = newBB->splitBasicBlock(CallNextInst);
+    MayFreeBBs.insert(newBB->getPrevNode());
+  }
+}
+
+//
 // Entrance of this pass.
 //
 bool CheckedCSplitBBPass::runOnModule(Module &M) {
-  bool changed = false;
-  StringRef MName = M.getName();
-  errs() << "[CheckedCSplitBBPass]: processing " << MName << "\n";
+  InstSet_t &MayFreeCalls = getAnalysis<CheckedCFreeFinderPass>().MayFreeCalls;
+  SplitBB(M, MayFreeCalls);
 
-  return changed;
+  return  MayFreeCalls.empty() ? false : true;
 }
 
 // Create a new instance of this pass.
