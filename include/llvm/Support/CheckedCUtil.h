@@ -19,15 +19,21 @@
 
 namespace llvm {
 
+#define MMPTRCHECK_FN "MMPtrKeyCheck"
+#define MMARRAYPTRCHECK_FN "MMArrayPtrKeyCheck"
+
 // Data structures
 typedef std::vector<Function *> FnList_t;
 typedef std::unordered_set<BasicBlock *> BBSet_t;
 typedef std::unordered_set<Instruction *> InstSet_t;
+typedef std::unordered_set<Value *> ValueSet_t;
 typedef std::unordered_set<Function *> FnSet_t;
 typedef std::unordered_map<Function *, FnSet_t> FnFnSetMap_t;
 typedef std::unordered_map<Function *, BBSet_t> FnBBSetMap_t;
 typedef std::unordered_map<Function *, InstSet_t> FnInstSetMap_t;
-typedef std::unordered_set<BasicBlock *, InstSet_t> BBInstSetMap_t;
+typedef std::unordered_map<BasicBlock *, InstSet_t> BBInstSetMap_t;
+typedef std::unordered_map<BasicBlock *, ValueSet_t> BBValueSetMap_t;
+#define TSet_t std::unordered_set<T *>
 
 // Functions
 
@@ -43,6 +49,37 @@ void dumpSet(std::unordered_set<T*> S, std::string msg) {
              std::is_base_of<BasicBlock, T>::value) {
     for (T *elem : S) elem->dump();
   }
+}
+
+//
+// Function: SetInsection()
+//
+// This function computes the intersection of two sets.
+//
+template<typename T>
+TSet_t SetIntersection(TSet_t &S1, TSet_t &S2) {
+  TSet_t newSet;
+  for (T *elem : S1) {
+    if (S2.find(elem) != S2.end()) {
+      newSet.insert(elem);
+    }
+  }
+
+  return newSet;
+}
+
+//
+// Function: SetUnion()
+//
+// This function computes the union of two sets. It directly changes the first
+// set and returns true if there the second set contains any element that
+// is not in the original first set.
+//
+template<typename T>
+bool SetUnion(TSet_t &S1, TSet_t &S2) {
+  unsigned S1Size = S1.size();
+  for (T *elem : S2) S1.insert(elem);
+  return S1.size() > S1Size;
 }
 
 } // end of llvm namespace

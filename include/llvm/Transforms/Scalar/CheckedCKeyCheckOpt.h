@@ -28,6 +28,9 @@ struct CheckedCKeyCheckOptPass : ModulePass {
   bool runOnModule(Module &F) override;
 
   void getAnalysisUsage(AnalysisUsage &AU) const override;
+
+private:
+  void Opt(Module &M);
 };
 
 ModulePass *createCheckedCKeyCheckOptPass(void);
