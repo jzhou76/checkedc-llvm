@@ -437,11 +437,6 @@ void PassManagerBuilder::populateModulePassManager(
     MPM.add(createSampleProfileLoaderPass(PGOSampleUse));
   }
 
-  // Checked C
-  if (CheckedCKeyCheckOpt) {
-    MPM.add(createCheckedCKeyCheckOptPass());
-  }
-
   // Allow forcing function attributes as a debugging and tuning aid.
   MPM.add(createForceFunctionAttrsLegacyPass());
 
@@ -523,6 +518,12 @@ void PassManagerBuilder::populateModulePassManager(
   MPM.add(createGlobalOptimizerPass()); // Optimize out global vars
   // Promote any localized global vars.
   MPM.add(createPromoteMemoryToRegisterPass());
+
+  // Checked C
+  // Run this pass after the Mem2Reg pass.
+  if (CheckedCKeyCheckOpt) {
+    MPM.add(createCheckedCKeyCheckOptPass());
+  }
 
   MPM.add(createDeadArgEliminationPass()); // Dead argument elimination
 

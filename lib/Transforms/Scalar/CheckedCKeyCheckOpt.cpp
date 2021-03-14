@@ -53,6 +53,142 @@ void CheckedCKeyCheckOptPass::getAnalysisUsage(AnalysisUsage &AU) const {
 #endif
 }
 
+//---------- Helper Functions ------------------------------------------------//
+//
+bool isInt64Ty(Type *T) {
+  if (IntegerType *IT = dyn_cast<IntegerType>(T)) {
+    return IT->getBitWidth() == 64;
+  }
+
+  return false;
+}
+//
+//---------- End of Helper Functions
+
+//
+// Function: addKeyCheckForCalls()
+//
+// This function adds dynamic key check(s) for checked pointer argument(s)
+// right before the call. This has two potential benefits.
+//
+// First, without this the compiler inserts at least one key check for
+// each checked pointer function argument as long as the argument is
+// dereferenced in the function. Moving the check before the function call
+// may save some unnecessary checks. For example, if function foo() calls bar()
+// which calls baz(), and foo() passes a checked pointer p to bar() and bar()
+// passes the same pointer to baz(). Without the check before the call to bar(),
+// there would be at least two key checks, one in bar() and one in baz().
+// With this pass, there could be only one check before call to bar()
+// because the one before the call to baz() can be optimized away.
+//
+// Second, this may make the compiler optimize away unnecessary metadata
+// propagation. If a function never does key check on a checked pointer
+// argument or never propagates it, the compiler can omit passing the
+// metadata at the asm level when the function is called.
+//
+void CheckedCKeyCheckOptPass::addKeyCheckForCalls(Module &M) {
+  Function *MMPtrCheckFn = NULL, *MMArrayPtrCheckFn = NULL;
+
+  for (Function &F : M) {
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        if (CallBase *Call = dyn_cast<CallBase>(&I)) {
+          for (unsigned i = 0; i < Call->arg_size(); i++) {
+            Value *arg = Call->getArgOperand(i);
+            // Before this pass the compiler breaks any checked pointer argument
+            // to scalar types. For the current implementation, MMPtr is brok
+            // to "pointee_type*, i64" and MMArrayPtr becomes
+            // "pointee_type*, i64, i64*". The following code tries to find
+            // MMSafe pointers by looking at the types of the arguments.
+            if (arg->getType()->isPointerTy() && i + 1 < Call->arg_size() &&
+                isInt64Ty(Call->getArgOperand(i + 1)->getType())) {
+              if (isa<LoadInst>(arg)) {
+                if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(
+                    cast<LoadInst>(arg)->getPointerOperand())) {
+                  Type *SrcElemTy = GEP->getSourceElementType();
+                  if (SrcElemTy->isMMSafePointerTy()) {
+                    // Found an MMSafe pointer argument.
+                    Value *MMSafePtrPtr = GEP->getPointerOperand();
+                    Function *KeyCheckFn;
+                    if (SrcElemTy->isMMPointerTy()) {
+                      if (!MMPtrCheckFn) {
+                        MMPtrCheckFn = getKeyCheckFnPrototype(M);
+                      }
+                      KeyCheckFn = MMPtrCheckFn;
+                      i++;
+                    } else {
+                      if (!MMArrayPtrCheckFn) {
+                        MMArrayPtrCheckFn = getKeyCheckFnPrototype(M, false);
+                      }
+                      KeyCheckFn = MMArrayPtrCheckFn;
+                      i += 2;
+                    }
+                    // Cast the pointer to the MMSafePtr argument because the
+                    // key check functions take MMSafePtr to a "void" (i8) type.
+                    MMSafePtrPtr = CastInst::CreatePointerCast(MMSafePtrPtr,
+                                      KeyCheckFn->arg_begin()->getType());
+                    cast<Instruction>(MMSafePtrPtr)->insertBefore(Call);
+                    // Insert a call to the key check function before this
+                    // function call. This key check would be optimized away
+                    // if the same MMSafe pointer is checked earlier.
+                    CallInst *CheckFnCall =
+                      CallInst::Create(KeyCheckFn->getFunctionType(), KeyCheckFn,
+                                      {MMSafePtrPtr});
+                    // It's necessary to explicitly set the calling convention
+                    // to "fastcc"; it would otherwise cause the compiler
+                    // to generate an llvm.trap() and an unreachable instruction
+                    // for this call. When the compiler insert key checks during
+                    // IR function generation, we don't explicitly set the CC
+                    // but somehow the "fastcc" is added later.
+                    //
+                    // Jie Zhou: I don't understand the reason for this.
+                    CheckFnCall->setCallingConv(CallingConv::Fast);
+                    CheckFnCall->insertBefore(Call);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+//
+// Function getKeyCheckFnPrototype()
+//
+// This is a helper function for addKeyCheckForCalls(). It retrieves one of the
+// two check functions or creates the prototype of one if the current module
+// does not have it.
+//
+Function *
+CheckedCKeyCheckOptPass::getKeyCheckFnPrototype(Module &M, bool isMMPtr) {
+  Function *KeyCheckFn = isMMPtr ? M.getFunction(MMPTRCHECK_FN) :
+                                   M.getFunction(MMARRAYPTRCHECK_FN);
+  if (KeyCheckFn) return KeyCheckFn;
+
+  // Haven't seen the key check function. Create a prototype of it.
+
+  LLVMContext &C = M.getContext();
+  Type *VoidTy = Type::getVoidTy(C);
+  PointerType *VoidPtrTy = Type::getInt8PtrTy(C);
+  Type *Int64Ty = Type::getInt64Ty(C);
+  FunctionType *CheckFnTy;
+
+  if (isMMPtr) {
+    PointerType *MMPtrPtrTy = StructType::get(VoidPtrTy, Int64Ty)->getPointerTo();
+    CheckFnTy = FunctionType::get(VoidTy, {MMPtrPtrTy}, false);
+    return cast<Function>(M.getOrInsertFunction(StringRef(MMPTRCHECK_FN), CheckFnTy));
+  } else {
+    PointerType *MMArrayPtrPtrTy =
+      StructType::get(VoidPtrTy, Int64Ty, Type::getInt64PtrTy(C))->getPointerTo();
+    CheckFnTy = FunctionType::get(VoidTy, {MMArrayPtrPtrTy}, false);
+    return cast<Function>(M.getOrInsertFunction(StringRef(MMARRAYPTRCHECK_FN),
+                                                CheckFnTy));
+  }
+}
+
 //
 // Function: Opt()
 //
@@ -215,6 +351,8 @@ bool CheckedCKeyCheckOptPass::runOnModule(Module &M) {
 #if 0
   return false;
 #endif
+
+  addKeyCheckForCalls(M);
 
   Opt(M);
 
