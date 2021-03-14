@@ -216,9 +216,7 @@ void CheckedCKeyCheckOptPass::Opt(Module &M) {
         BBWithChecks[Call->getParent()].insert(Call);
         Value *KeyCheckArg = Call->getArgOperand(0);
         // For non-global variables, this is a bitcast.
-        if (isa<BitCastInst>(KeyCheckArg)) {
-          KeyCheckArg = cast<BitCastInst>(KeyCheckArg)->getOperand(0);
-        }
+        KeyCheckArg = KeyCheckArg->stripPointerCasts();
         KeyCheckCallArg.insert(std::pair<Instruction*, Value*>(Call, KeyCheckArg));
       }
     }
@@ -229,9 +227,7 @@ void CheckedCKeyCheckOptPass::Opt(Module &M) {
         BBWithChecks[Call->getParent()].insert(Call);
         Value *KeyCheckArg = Call->getArgOperand(0);
         // For non-global variables, this is a bitcast.
-        if (isa<BitCastInst>(KeyCheckArg)) {
-          KeyCheckArg = cast<BitCastInst>(KeyCheckArg)->getOperand(0);
-        }
+        KeyCheckArg = KeyCheckArg->stripPointerCasts();
         KeyCheckCallArg.insert(std::pair<Instruction*, Value*>(Call, KeyCheckArg));
       }
     }
