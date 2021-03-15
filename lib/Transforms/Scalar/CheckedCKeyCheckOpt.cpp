@@ -190,6 +190,41 @@ CheckedCKeyCheckOptPass::getKeyCheckFnPrototype(Module &M, bool isMMPtr) {
 }
 
 //
+// Function: addCheckedArgToFnFront()
+//
+// This is a helper function for Opt(). It adds the pointer(s) to mmsafe pointer
+// argument(s) to the checked pointer sets for the first BB of a function.
+// This action is based on the fact that mmsafe pointer arguments have been
+// checked before a function call.
+//
+static void addCheckedArgToFnFront(Module &M, BBValueSetMap_t &BBOut) {
+  for (Function &F : M) {
+    for (Function::arg_iterator AI = F.arg_begin(); AI != F.arg_end(); AI++) {
+      if (AI->getType()->isPointerTy() &&
+          AI->getArgNo() < F.arg_size() - 1 && isInt64Ty((AI + 1)->getType())) {
+        // This might be an mmsafe pointer; if so, there would be an alloca
+        // of struct for it and the raw pointer argument of the mmsafe pointer
+        // would be stored to the location pointed by the first field of the
+        // alloca struct.
+        for (User *U : AI->users()) {
+          if (StoreInst *SI = dyn_cast<StoreInst>(U)) {
+            if (GetElementPtrInst *GEP =
+                dyn_cast<GetElementPtrInst>(SI->getPointerOperand())) {
+              Type *SrcElemTy = GEP->getSourceElementType();
+              if (SrcElemTy->isMMSafePointerTy()) {
+                BBOut[&F.front()].insert(GEP->getPointerOperand());
+                AI = AI + (SrcElemTy->isMMPointerTy() ? 1 : 2);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+//
 // Function: Opt()
 //
 // This is the main body of this pass. It is a pretty straightforward
@@ -203,12 +238,12 @@ void CheckedCKeyCheckOptPass::Opt(Module &M) {
   BBSet_t &MayFreeBBs = getAnalysis<CheckedCSplitBBPass>().MayFreeBBs;
 
   // Find all BBs that have mmsafe pointer check calls.  This saves us
-  // a little time of iterating BBs that do not contain key check calls.
+  // a little time to later iterate over BBs that do not contain key check calls.
   Function *MMPtrCheckFn = M.getFunction(MMPTRCHECK_FN);
   Function *MMArrayPtrCheckFn = M.getFunction(MMARRAYPTRCHECK_FN);
   // Map a BB to all the key check calls in it.
   BBInstSetMap_t BBWithChecks;
-  // Map each key check function to its argument.
+  // Map each key check function call to its argument.
   std::unordered_map<Instruction *, Value *> KeyCheckCallArg;
   if (MMPtrCheckFn) {
     for (User *U : MMPtrCheckFn->users()) {
@@ -236,6 +271,8 @@ void CheckedCKeyCheckOptPass::Opt(Module &M) {
   // Valid pointers of checked pointers at the beginning and end of a BB.
   BBValueSetMap_t BBIn;
   BBValueSetMap_t BBOut;
+
+  addCheckedArgToFnFront(M, BBOut);
 
   // BB-local optimization and initialization of BBOut. Since there are no
   // other function calls (due to the SplitBB pass), a key check would survive

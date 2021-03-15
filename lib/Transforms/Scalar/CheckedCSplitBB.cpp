@@ -9,7 +9,7 @@
 // This file implementes the CheckedCSplitBB pass. It splits each basic block
 // by function call(s) that may free any mmsafe pointers used in the function.
 // The result is that every new basic block either has no function calls except
-// for the ones that will not freeing mmsafe pointers or has only one call
+// for the ones that will not free mmsafe pointers or has only one call
 // instruction that may free mmsafe pointers.
 //
 //===----------------------------------------------------------------------===//

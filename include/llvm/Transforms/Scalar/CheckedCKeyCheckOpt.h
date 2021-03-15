@@ -32,7 +32,8 @@ struct CheckedCKeyCheckOptPass : ModulePass {
 private:
   // Find or create the prototype of a key check function.
   Function *getKeyCheckFnPrototype(Module &M, bool isMMPtr=true);
-  // Added key check(s) for all MMSafePtr argument(s) of a function call.
+
+  // Add key check(s) for all MMSafePtr argument(s) of a function call.
   void addKeyCheckForCalls(Module &M);
 
   void Opt(Module &M);
