@@ -26,7 +26,10 @@
 
 using namespace llvm;
 
+#ifndef DEBUG_TYPE
 #define DEBUG_TYPE "CheckedCKeyCheckOptPass"
+#endif
+
 STATISTIC(NumDynamicKeyCheckRemoved, "The # of removed dynamic key checks");
 
 char CheckedCKeyCheckOptPass::ID = 0;
