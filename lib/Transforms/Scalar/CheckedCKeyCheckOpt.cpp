@@ -90,7 +90,9 @@ bool isInt64Ty(Type *T) {
 // metadata at the asm level when the function is called.
 //
 void CheckedCKeyCheckOptPass::addKeyCheckForCalls(Module &M) {
-  Function *MMPtrCheckFn = NULL, *MMArrayPtrCheckFn = NULL;
+  Function *MMPtrCheckFn = M.getFunction(MMPTRCHECK_FN),
+           *MMArrayPtrCheckFn = M.getFunction(MMARRAYPTRCHECK_FN);
+  assert((MMPtrCheckFn && MMArrayPtrCheckFn) && "Key Check Functions not Found");
 
   for (Function &F : M) {
     for (BasicBlock &BB : F) {
@@ -114,15 +116,9 @@ void CheckedCKeyCheckOptPass::addKeyCheckForCalls(Module &M) {
                     Value *MMSafePtrPtr = GEP->getPointerOperand();
                     Function *KeyCheckFn;
                     if (SrcElemTy->isMMPointerTy()) {
-                      if (!MMPtrCheckFn) {
-                        MMPtrCheckFn = getKeyCheckFnPrototype(M);
-                      }
                       KeyCheckFn = MMPtrCheckFn;
                       i++;
                     } else {
-                      if (!MMArrayPtrCheckFn) {
-                        MMArrayPtrCheckFn = getKeyCheckFnPrototype(M, false);
-                      }
                       KeyCheckFn = MMArrayPtrCheckFn;
                       i += 2;
                     }
@@ -155,40 +151,6 @@ void CheckedCKeyCheckOptPass::addKeyCheckForCalls(Module &M) {
         }
       }
     }
-  }
-}
-
-//
-// Function getKeyCheckFnPrototype()
-//
-// This is a helper function for addKeyCheckForCalls(). It retrieves one of the
-// two check functions or creates the prototype of one if the current module
-// does not have it.
-//
-Function *
-CheckedCKeyCheckOptPass::getKeyCheckFnPrototype(Module &M, bool isMMPtr) {
-  Function *KeyCheckFn = isMMPtr ? M.getFunction(MMPTRCHECK_FN) :
-                                   M.getFunction(MMARRAYPTRCHECK_FN);
-  if (KeyCheckFn) return KeyCheckFn;
-
-  // Haven't seen the key check function. Create a prototype of it.
-
-  LLVMContext &C = M.getContext();
-  Type *VoidTy = Type::getVoidTy(C);
-  PointerType *VoidPtrTy = Type::getInt8PtrTy(C);
-  Type *Int64Ty = Type::getInt64Ty(C);
-  FunctionType *CheckFnTy;
-
-  if (isMMPtr) {
-    PointerType *MMPtrPtrTy = StructType::get(VoidPtrTy, Int64Ty)->getPointerTo();
-    CheckFnTy = FunctionType::get(VoidTy, {MMPtrPtrTy}, false);
-    return cast<Function>(M.getOrInsertFunction(StringRef(MMPTRCHECK_FN), CheckFnTy));
-  } else {
-    PointerType *MMArrayPtrPtrTy =
-      StructType::get(VoidPtrTy, Int64Ty, Type::getInt64PtrTy(C))->getPointerTo();
-    CheckFnTy = FunctionType::get(VoidTy, {MMArrayPtrPtrTy}, false);
-    return cast<Function>(M.getOrInsertFunction(StringRef(MMARRAYPTRCHECK_FN),
-                                                CheckFnTy));
   }
 }
 

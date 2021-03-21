@@ -2253,9 +2253,17 @@ OptimizeFunctions(Module &M, TargetLibraryInfo *TLI,
     if (!F->hasName() && !F->isDeclaration() && !F->hasLocalLinkage())
       F->setLinkage(GlobalValue::InternalLinkage);
 
-    if (deleteIfDead(*F, NotDiscardableComdats)) {
-      Changed = true;
-      continue;
+    // Checked C: prevent deleting the two key check functions, even if
+    // there has been no calls to them yet. Our key check optimization pass
+    // may insert calls to them. Note that we cannot skip over the rest of this
+    // function for the two key check functions because otherwise later pass(es)
+    // would optimize them to only one unreachable instruction.
+    if (F->getName() != "MMPtrKeyCheck" &&
+        F->getName() != "MMArrayPtrKeyCheck") {
+      if (deleteIfDead(*F, NotDiscardableComdats)) {
+        Changed = true;
+        continue;
+      }
     }
 
     // LLVM's definition of dominance allows instructions that are cyclic
