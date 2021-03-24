@@ -1999,6 +1999,13 @@ bool llvm::runIPSCCP(
     if (F.isDeclaration())
       continue;
 
+    // Checked C
+    // Skip optimizing key check functions. The body of an internal key check
+    // function would be optimized to empty if there is no call to it in the
+    // module. We need prevent this because our key check opt pass may insert
+    // call(s) to a key check function that was never called before.
+    if (F.isMMSafePtrKeyCheckFn()) continue;
+
     SmallVector<BasicBlock *, 512> BlocksToErase;
 
     if (Solver.isBlockExecutable(&F.front()))
@@ -2148,6 +2155,5 @@ bool llvm::runIPSCCP(
     M.getGlobalList().erase(GV);
     ++IPNumGlobalConst;
   }
-
   return MadeChanges;
 }
