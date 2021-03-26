@@ -22,7 +22,10 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/IR/IRBuilder.h"
 #include "../../IR/ConstantsContext.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include <array>
 
 using namespace llvm;
 
@@ -95,63 +98,107 @@ void CheckedCKeyCheckOptPass::addKeyCheckForCalls(Module &M) {
   assert((MMPtrCheckFn && MMArrayPtrCheckFn) && "Key Check Functions not Found");
 
   for (Function &F : M) {
+    // Use a container to hold materials for add key check calls later.
+    std::vector<std::array<Value*, 4>> AddKeyChecks;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
         if (CallBase *Call = dyn_cast<CallBase>(&I)) {
+          // Would the next line make the compiling a little faster or slower?
+          if (isa<IntrinsicInst>(Call)) continue;
           for (unsigned i = 0; i < Call->arg_size(); i++) {
-            Value *arg = Call->getArgOperand(i);
-            // Before this pass the compiler breaks any checked pointer argument
-            // to scalar types. For the current implementation, MMPtr is brok
+            Value *arg = Call->getArgOperand(i)->stripPointerCasts();
+            // Before this pass the compiler breaks a checked pointer argument
+            // to scalar types. For the current implementation, MMPtr is broken
             // to "pointee_type*, i64" and MMArrayPtr becomes
             // "pointee_type*, i64, i64*". The following code tries to find
-            // MMSafe pointers by looking at the types of the arguments.
+            // MMSafe pointers based on these facts.
             if (arg->getType()->isPointerTy() && i + 1 < Call->arg_size() &&
                 isInt64Ty(Call->getArgOperand(i + 1)->getType())) {
-              if (isa<LoadInst>(arg)) {
-                if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(
-                    cast<LoadInst>(arg)->getPointerOperand())) {
-                  Type *SrcElemTy = GEP->getSourceElementType();
-                  if (SrcElemTy->isMMSafePointerTy()) {
-                    // Found an MMSafe pointer argument.
-                    Value *MMSafePtrPtr = GEP->getPointerOperand();
-                    Function *KeyCheckFn;
-                    if (SrcElemTy->isMMPointerTy()) {
-                      KeyCheckFn = MMPtrCheckFn;
-                      i++;
-                    } else {
-                      KeyCheckFn = MMArrayPtrCheckFn;
-                      i += 2;
-                    }
-                    // Cast the pointer to the MMSafePtr argument because the
-                    // key check functions take MMSafePtr to a "void" (i8) type.
-                    MMSafePtrPtr = CastInst::CreatePointerCast(MMSafePtrPtr,
-                                      KeyCheckFn->arg_begin()->getType());
-                    cast<Instruction>(MMSafePtrPtr)->insertBefore(Call);
-                    // Insert a call to the key check function before this
-                    // function call. This key check would be optimized away
-                    // if the same MMSafe pointer is checked earlier.
-                    CallInst *CheckFnCall =
-                      CallInst::Create(KeyCheckFn->getFunctionType(), KeyCheckFn,
-                                      {MMSafePtrPtr});
-                    // It's necessary to explicitly set the calling convention
-                    // to "fastcc"; it would otherwise cause the compiler
-                    // to generate an llvm.trap() and an unreachable instruction
-                    // for this call. When the compiler insert key checks during
-                    // IR function generation, we don't explicitly set the CC
-                    // but somehow the "fastcc" is added later.
-                    //
-                    // Jie Zhou: I don't understand the reason for this.
-                    CheckFnCall->setCallingConv(CallingConv::Fast);
-                    CheckFnCall->insertBefore(Call);
+              Type *MMSafePtrTy = nullptr;
+              Value *MMSafePtrPtr = nullptr;
+              if (isa<ExtractValueInst>(arg)) {
+                Value *V = cast<ExtractValueInst>(arg)->getAggregateOperand();
+                if ((MMSafePtrTy = V->getType())->isMMSafePointerTy()) {
+                  if (isa<LoadInst>(V)) {
+                    MMSafePtrPtr = cast<LoadInst>(V)->getPointerOperand();
+                  } else if (isa<CallBase>(V)) {
+                    const DataLayout &DL = M.getDataLayout();
+                    MMSafePtrPtr = new AllocaInst(MMSafePtrTy,
+                                                  DL.getAllocaAddrSpace(),
+                                                  "AllocaForMMSafePtr",
+                                                  Call);
+                    new StoreInst(V, MMSafePtrPtr, Call);
+                  } else {
+                    assert(false && "Unknown type");
                   }
                 }
+              } else if (isa<LoadInst>(arg)) {
+                if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(
+                      cast<LoadInst>(arg)->getPointerOperand())) {
+                  if ((MMSafePtrTy = GEP->getSourceElementType()
+                        )->isMMSafePointerTy()) {
+                    MMSafePtrPtr = GEP->getPointerOperand();
+                  }
+                }
+              } else {
+                // Are there any other cases to handle?
               }
+              if (!MMSafePtrPtr) continue;
+
+              // Found an MMSafe pointer argument.
+              Function *KeyCheckFn;
+              if (MMSafePtrTy->isMMPointerTy()) {
+                KeyCheckFn = MMPtrCheckFn;
+                i++;
+              } else {
+                KeyCheckFn = MMArrayPtrCheckFn;
+                i += 2;
+              }
+              AddKeyChecks.push_back
+                (std::array<Value*, 4>({Call, arg, MMSafePtrPtr, KeyCheckFn}));
             }
           }
         }
-      }
+      } // End of BasicBlock iterator
+    } // End of Function iterator
+
+    // Insert key checks for a call as needed.
+    for (std::array<Value *, 4> &KeyCheck : AddKeyChecks) {
+      Instruction *Call = cast<Instruction>(KeyCheck[0]);
+      Value *PtrArg = KeyCheck[1], *MMSafePtrPtr = KeyCheck[2];
+      Function *KeyCheckFn = cast<Function>(KeyCheck[3]);
+      BasicBlock *OldBB = Call->getParent();
+
+      // Split the BB by the Call instruction.
+      BasicBlock *BBWithCall = OldBB->splitBasicBlock(Call, "");
+
+      // First check if the pointer is NULL.
+      IRBuilder<> Builder(&OldBB->back());
+      Value *Cond = Builder.CreateIsNotNull(PtrArg);
+      BasicBlock *KeyCheckBB = BasicBlock::Create(M.getContext(),
+                                                   "KeyCheckForCall",
+                                                   Call->getFunction());
+      Builder.CreateCondBr(Cond, KeyCheckBB, BBWithCall);
+      Builder.SetInsertPoint(KeyCheckBB);
+      MMSafePtrPtr = Builder.CreatePointerCast(MMSafePtrPtr,
+                                               KeyCheckFn->arg_begin()->getType());
+      // Insert a call to a proper key check function. This check would be
+      // optimized away later if the same MMSafe pointer is checked earlier.
+      CallInst *CheckFnCall = Builder.CreateCall(KeyCheckFn->getFunctionType(),
+                                                  KeyCheckFn, {MMSafePtrPtr});
+      // It's necessary to explicitly set the calling convention to "fastcc";
+      // it would otherwise cause the compiler to generate an
+      // unreachable instruction for this call.  When the compiler inserts
+      // key check call during IR function generation, it doesn't explicitly set
+      // the CC but somehow the "fastcc" is added later.
+      // Jie Zhou: I don't understand the reason for this.
+      CheckFnCall->setCallingConv(CallingConv::Fast);
+      Builder.CreateBr(BBWithCall);
+
+      // Delete the original unconditional branch in the old BB.
+      OldBB->back().eraseFromParent();
     }
-  }
+  } // End of Module iterator
 }
 
 //
