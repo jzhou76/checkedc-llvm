@@ -2253,6 +2253,12 @@ OptimizeFunctions(Module &M, TargetLibraryInfo *TLI,
     if (!F->hasName() && !F->isDeclaration() && !F->hasLocalLinkage())
       F->setLinkage(GlobalValue::InternalLinkage);
 
+    if (deleteIfDead(*F, NotDiscardableComdats)) {
+      Changed = true;
+      continue;
+    }
+
+#if 0
     // Checked C: prevent deleting the two key check functions, even if
     // there has been no calls to them yet. Our key check optimization pass
     // may insert calls to them. Note that we cannot skip over the rest of this
@@ -2264,6 +2270,7 @@ OptimizeFunctions(Module &M, TargetLibraryInfo *TLI,
         continue;
       }
     }
+#endif
 
     // LLVM's definition of dominance allows instructions that are cyclic
     // in unreachable blocks, e.g.:

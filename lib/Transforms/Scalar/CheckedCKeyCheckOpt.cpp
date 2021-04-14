@@ -33,6 +33,9 @@ using namespace llvm;
 #define DEBUG_TYPE "CheckedCKeyCheckOptPass"
 #endif
 
+#define ADD_CHECK_BEFORE_CALL
+#undef ADD_CHECK_BEFORE_CALL
+
 STATISTIC(NumDynamicKeyCheckRemoved, "The # of removed dynamic key checks");
 
 char CheckedCKeyCheckOptPass::ID = 0;
@@ -284,7 +287,9 @@ void CheckedCKeyCheckOptPass::Opt(Module &M) {
   BBValueSetMap_t BBIn;
   BBValueSetMap_t BBOut;
 
+#ifdef ADD_CHECK_BEFORE_CALL
   addCheckedArgToFnFront(M, BBOut);
+#endif
 
   // BB-local optimization and initialization of BBOut. Since there are no
   // other function calls (due to the SplitBB pass), a key check would survive
@@ -397,7 +402,9 @@ bool CheckedCKeyCheckOptPass::runOnModule(Module &M) {
   return false;
 #endif
 
+#ifdef ADD_CHECK_BEFORE_CALL
   addKeyCheckForCalls(M);
+#endif
 
   Opt(M);
 
