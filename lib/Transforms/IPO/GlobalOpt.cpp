@@ -2258,6 +2258,20 @@ OptimizeFunctions(Module &M, TargetLibraryInfo *TLI,
       continue;
     }
 
+#if 0
+    // Checked C: prevent deleting the two key check functions, even if
+    // there has been no calls to them yet. Our key check optimization pass
+    // may insert calls to them. Note that we cannot skip over the rest of this
+    // function for the two key check functions because otherwise later pass(es)
+    // would optimize them to only one unreachable instruction.
+    if (!F->isMMSafePtrKeyCheckFn()) {
+      if (deleteIfDead(*F, NotDiscardableComdats)) {
+        Changed = true;
+        continue;
+      }
+    }
+#endif
+
     // LLVM's definition of dominance allows instructions that are cyclic
     // in unreachable blocks, e.g.:
     // %pat = select i1 %condition, @global, i16* %pat

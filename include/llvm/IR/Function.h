@@ -41,6 +41,9 @@
 #include <memory>
 #include <string>
 
+#define MMPTRKEYCHECK_FN "MMPtrKeyCheck"
+#define MMARRAYPTRKEYCHECK_FN "MMArrayPtrKeyCheck"
+
 namespace llvm {
 
 namespace Intrinsic {
@@ -801,6 +804,10 @@ public:
   /// Return value: true =>  null pointer dereference is not undefined.
   bool nullPointerIsDefined() const;
 
+  /// Checked C: check if this is a dynamic key check function.
+  bool isMMSafePtrKeyCheckFn() const {
+    return getName() == MMPTRKEYCHECK_FN || getName() == MMARRAYPTRKEYCHECK_FN;
+  }
 private:
   void allocHungoffUselist();
   template<int Idx> void setHungoffOperand(Constant *C);

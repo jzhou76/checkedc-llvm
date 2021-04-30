@@ -409,6 +409,9 @@ void initializeWinEHPreparePass(PassRegistry&);
 void initializeWriteBitcodePassPass(PassRegistry&);
 void initializeWriteThinLTOBitcodePass(PassRegistry&);
 void initializeXRayInstrumentationPass(PassRegistry&);
+void initializeCheckedCFreeFinderPassPass(PassRegistry&);   // Checked C pass
+void initializeCheckedCSplitBBPassPass(PassRegistry&);      // Checked C pass
+void initializeCheckedCKeyCheckOptPassPass(PassRegistry&);  // Checked C pass
 
 } // end namespace llvm
 
