@@ -151,12 +151,18 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 
+  // Checked C
+  bool isMultipleQualified() { return isMultiple; };
+  void setMultipleQualified(bool flag) { isMultiple = flag; }
 private:
   // Shadow Instruction::setInstructionSubclassData with a private forwarding
   // method so that subclasses cannot accidentally use it.
   void setInstructionSubclassData(unsigned short D) {
     Instruction::setInstructionSubclassData(D);
   }
+
+  // Checked C
+  bool isMultiple = false;
 };
 
 //===----------------------------------------------------------------------===//
