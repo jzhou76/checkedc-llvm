@@ -1,4 +1,4 @@
-//===-- HarmonizeType.cpp - Resolve MMSafePtr Type Mismatch-----------------==//
+//===-- HarmonizeType.h - Resolve MMSafePtr Type Mismatch-------------------==//
 //
 //          Temporal Memory Safety for Checked C
 //

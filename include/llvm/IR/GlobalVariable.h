@@ -49,6 +49,8 @@ class GlobalVariable : public GlobalObject, public ilist_node<GlobalVariable> {
                                                // value before global
                                                // initializers are run?
 
+  // Checked C
+  bool isMultiple = false;
 public:
   /// GlobalVariable ctor - If a parent module is specified, the global is
   /// automatically inserted into the end of the specified modules global list.
@@ -251,6 +253,10 @@ public:
   static bool classof(const Value *V) {
     return V->getValueID() == Value::GlobalVariableVal;
   }
+
+  // Checked C
+  void setMultipleQualified(bool flag) { isMultiple = flag; }
+  bool isMultipleQualified() { return isMultiple; }
 };
 
 template <>

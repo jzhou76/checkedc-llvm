@@ -50,6 +50,7 @@ void llvm::initializeCore(PassRegistry &Registry) {
   initializePrintFunctionPassWrapperPass(Registry);
   initializePrintBasicBlockPassPass(Registry);
   initializeSafepointIRVerifierPass(Registry);
+  initializeCheckedCAddLockToMultiplePassPass(Registry);
   initializeCheckedCHarmonizeTypePassPass(Registry);
   initializeVerifierLegacyPassPass(Registry);
 }

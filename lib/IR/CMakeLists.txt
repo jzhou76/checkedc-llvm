@@ -56,6 +56,7 @@ add_llvm_library(LLVMCore
   Value.cpp
   ValueSymbolTable.cpp
   Verifier.cpp
+  CheckedCAddLockToMultiple.cpp
   CheckedCHarmonizeType.cpp
 
   ADDITIONAL_HEADER_DIRS
