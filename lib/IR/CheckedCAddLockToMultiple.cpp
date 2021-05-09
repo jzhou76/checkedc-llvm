@@ -47,14 +47,40 @@ static bool AllocateLockForMultipleStackVars(Module &M) {
 
   // Process each _multiple AllocaInst.
   IRBuilder<> Builder(M.getContext());
+  Type *Int64Ty = Builder.getInt64Ty();
   for (AllocaInst *Alloca : MultipleStackVars) {
     Builder.SetInsertPoint(Alloca);
-    StructType *ST = StructType::get(Builder.getInt64Ty(),
-                                     Alloca->getAllocatedType());
-    AllocaInst *NewAlloca = Builder.CreateAlloca(ST);
-    Value *VarPtr = Builder.CreateStructGEP(NewAlloca, 1);
-    // Initialize the lock to 1.
-    Builder.CreateStore(Builder.getInt64(1), Builder.CreateStructGEP(NewAlloca, 0));
+    Type *AllocaTy = Alloca->getAllocatedType();
+    Value *VarPtr = nullptr;   // Pointer to the target stack variable.
+    ConstantInt *One = Builder.getInt64(1);
+    if (AllocaTy->isMMSafePointerTy()) {
+      // For MMSafe pointers, we need to guarantee that they are aligned
+      // by 16 bytes. When an mmsafe pointer is declared in a struct in
+      // the source code, Clang guarantees that it is 16 bytes aligned (mmptr)
+      // or 32 bytes aligned (mmarrayptr) because we updated related src code
+      // (include/clang/Basic/TargetInfo.h) for it.  However, here when we
+      // manually build a struct that contains a 64-bit integer and an mmsafe
+      // pointer, no padding is inserted between the integer and the pointer
+      // to guarantee the alignment of the mmsafe ptr field, and it may cause
+      // segfault when a movaps instruction is used to load/store the mmsafe ptr
+      // field. I did not find an API to tweak the alignment of individual
+      // struct fields. Here we insert another 64-bit integer in the
+      // new struct and set the alignment of the whole struct to be 16 bytes.
+      // Jie Zhou: This solution is not elegant in my opinion, although the
+      // generated binary code should be the same even if there is an API
+      // function that pads a struct for alignment.
+      StructType *ST = StructType::get(Int64Ty, Int64Ty, AllocaTy);
+      AllocaInst *NewAlloca = Builder.CreateAlloca(ST);
+      NewAlloca->setAlignment(16);
+      VarPtr = Builder.CreateStructGEP(NewAlloca, 2);
+      Builder.CreateStore(One, Builder.CreateStructGEP(NewAlloca, 1));
+    } else {
+      StructType *ST = StructType::get(Int64Ty, AllocaTy);
+      AllocaInst *NewAlloca = Builder.CreateAlloca(ST);
+      VarPtr = Builder.CreateStructGEP(NewAlloca, 1);
+      Builder.CreateStore(One, Builder.CreateStructGEP(NewAlloca, 0));
+    }
+
     // Replace the uses of Alloca with the GEP to the new Alloca.
     BasicBlock::iterator BI(Alloca);
     ReplaceInstWithValue(Alloca->getParent()->getInstList(), BI, VarPtr);
@@ -91,20 +117,34 @@ static bool AllocateLockForMultipleGlobals(Module &M) {
     LLVMContext &llvmContext = M.getContext();
     Type *Int64Ty = Type::getInt64Ty(llvmContext);
     Type *Int32Ty = Type::getInt32Ty(llvmContext);
-    StructType *ST = StructType::get(Int64Ty, GV->getType()->getElementType());
+
+    Type *GVTy = GV->getType()->getElementType();
     Constant *GVInit = GV->hasInitializer() ? GV->getInitializer() : nullptr;
     // All global variables have a lock of value 2.
+    Constant *Zero = ConstantInt::get(Int64Ty, 0);
     Constant *Two = ConstantInt::get(Int64Ty, 2);
-    Constant *Indices[] =
-      {ConstantInt::get(Int32Ty, 0), ConstantInt::get(Int32Ty, 1)};
-    Constant *NewGVInit = GVInit ?
-                          ConstantStruct::get(ST, {Two, GVInit}) : nullptr;
+    StructType *ST;
+    // The indices to GEP the original global variable.
+    Constant *Indices[] = {ConstantInt::get(Int32Ty, 0), nullptr};
+    Constant *NewGVInit;
+    if (GVTy->isMMSafePointerTy()) {
+      // See the comment for the corresponding if condition for stack objects.
+      ST = StructType::get(Int64Ty, Int64Ty, GVTy);
+      Indices[1] = ConstantInt::get(Int32Ty, 2);
+      NewGVInit = GVInit ? ConstantStruct::get(ST, {Zero, Two, GVInit}) : nullptr;
+    } else {
+      ST = StructType::get(Int64Ty, GVTy);
+      Indices[1] = ConstantInt::get(Int32Ty, 1);
+      NewGVInit = GVInit ? ConstantStruct::get(ST, {Two, GVInit}) : nullptr;
+    }
+
     unsigned AS = GV->getType()->getPointerAddressSpace();
     // Create a struct that contains the lock and the original GV.
     GlobalVariable *GVWithLock =
       new GlobalVariable(M, ST, GV->isConstant(), GV->getLinkage(), NewGVInit,
           GV->getName() + "_multiple", nullptr, GlobalVariable::NotThreadLocal,
           AS, GV->isExternallyInitialized());
+    GVWithLock->setAlignment(16);
     Constant *NewGVGEP = ConstantExpr::getGetElementPtr(ST, GVWithLock, Indices);
     GV->replaceAllUsesWith(NewGVGEP);
     GV->eraseFromParent();
