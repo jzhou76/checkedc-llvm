@@ -72,7 +72,7 @@ bool isInt64Ty(Type *T) {
   return false;
 }
 //
-//---------- End of Helper Functions
+//---------- End of Helper Functions -----------------------------------------//
 
 //
 // Function: addKeyCheckForCalls()
@@ -327,7 +327,7 @@ void CheckedCKeyCheckOptPass::Opt(Module &M) {
       for (BasicBlock &BBRef : F) {
         BasicBlock *BB = &BBRef;
         if (MayFreeBBs.find(BB) != MayFreeBBs.end()) {
-          // Skil BBs that have non-key-check function calls.
+          // Skip BBs that may free.
           continue;
         }
 
@@ -338,7 +338,7 @@ void CheckedCKeyCheckOptPass::Opt(Module &M) {
             CheckedPtrBBIn.erase(SI->getPointerOperand());
           }
         }
-        changed = SetUnion(BBOut[BB], CheckedPtrBBIn);
+        changed |= SetUnion(BBOut[BB], CheckedPtrBBIn);
 
         // Propagate from BBOut to BBIn.
         if (&F.front() == BB) continue;  // Skip the first BB of a function.
@@ -358,7 +358,7 @@ void CheckedCKeyCheckOptPass::Opt(Module &M) {
         }
         changed |= SetUnion(BBIn[BB], predIntersection);
       }
-    } while (changed == true);
+    } while (changed == true);     // End of propagation
 
     // Collect all redundant checks.
     for (auto BBKeyChecks : BBWithChecks) {
@@ -377,7 +377,7 @@ void CheckedCKeyCheckOptPass::Opt(Module &M) {
             CheckToDel.insert(I);
           }
         } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-          // Check if the store may kill any checked mmsafe pointer.
+          // Check if a store may kill any checked mmsafe pointer.
           CheckedPtrs.erase(SI->getPointerOperand());
         }
       }
